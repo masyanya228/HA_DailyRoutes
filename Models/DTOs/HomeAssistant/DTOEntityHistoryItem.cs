@@ -1,0 +1,42 @@
+﻿using Newtonsoft.Json;
+
+namespace HA_DailyRoutes.Models.DTOs.HomeAssistant
+{
+    public class Attributes
+    {
+        [JsonProperty("source_type")]
+        public string SourceType { get; set; }
+
+        [JsonProperty("latitude")]
+        public double Latitude { get; set; }
+
+        [JsonProperty("longitude")]
+        public double Longitude { get; set; }
+
+        [JsonProperty("gps_accuracy")]
+        public int GpsAccuracy { get; set; }
+
+        [JsonProperty("friendly_name")]
+        public string FriendlyName { get; set; }
+    }
+
+    public class DTOEntityHistoryItem
+    {
+        [JsonProperty("entity_id")]
+        public string EntityId { get; set; }
+
+        [JsonProperty("state")]
+        public string State { get; set; }
+
+        [JsonProperty("attributes")]
+        public Attributes Attributes { get; set; }
+
+        [JsonProperty("last_changed")]
+        public DateTime LastChanged { get; set; }
+
+        [JsonProperty("last_updated")]
+        public DateTime LastUpdated { get; set; }
+    }
+
+
+}

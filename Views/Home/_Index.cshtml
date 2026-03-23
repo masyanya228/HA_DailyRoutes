@@ -1,0 +1,20 @@
+@{
+    ViewData["Title"] = "Мои маршруты";
+}
+
+<!-- Карта на весь экран -->
+<div id="map"></div>
+
+<!-- Плавающая панель управления (строится через JS) -->
+<div id="panel"></div>
+
+<!-- Индикатор загрузки (поверх карты) -->
+<div id="loadingMsg"></div>
+
+<!-- Сообщение об ошибке (поверх карты) -->
+<div id="errorMsg"></div>
+
+@section Scripts {
+    <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=9b4fb4f5-9006-44f3-9526-af863c0f6c07" type="text/javascript"></script>
+    <script src="~/js/map.js"></script>
+}
