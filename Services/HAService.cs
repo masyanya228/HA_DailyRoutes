@@ -42,7 +42,7 @@ public class HAService
         //Создание маршрутов
         FilterNearPoints(gpsHistoryItems);
         //gpsRouteDS.GetAll().ToList().ForEach(x => gpsRouteDS.Delete(x));
-        var newGpsRoutes = BuildGpsRoutes(gpsHistoryItems);//todo - зачем каждый раз пытаться построить существующие маршруты?
+        var newGpsRoutes = BuildGpsRoutes(gpsHistoryItems);
         newGpsRoutes.Where(x => x.GpsPoints.All(y => y.GpsRoute == null))
             .ToList()
             .ForEach(x => gpsRouteDS.Save(x));
@@ -80,7 +80,7 @@ public class HAService
     /// <param name="startFrom"></param>
     /// <returns></returns>
     private List<GpsHistory> GetArchivedGpsHistory(DateTime startFrom) => gpsHistoryDS.GetAll()
-        .Where(x => x.GpsStamp > startFrom)
+        .Where(x => x.GpsStamp >= startFrom)
         .OrderBy(x => x.GpsStamp)
         .ToList();
 
@@ -208,9 +208,27 @@ public class HAService
             .ToList()
     }).ToList();
 
-    public object AproveRoute(Guid id, string origin, string destination)
+    public object AproveRoute(Guid id, string origin, string destination, List<Guid> deletedPointIds, List<MovedPointDTO> movedPoints)
     {
         var route = gpsRouteDS.Get(id);
+        if (route is null || route.IsAproved)
+            return false;
+
+        foreach (var pointId in deletedPointIds)
+        {
+            GpsHistory point = gpsHistoryDS.Get(pointId);
+            point.GpsRoute = null;
+            gpsHistoryDS.Save(point);
+        }
+
+        foreach (var movedPoint in movedPoints)
+        {
+            GpsHistory point = gpsHistoryDS.Get(movedPoint.Id);
+            point.Latitude = movedPoint.Lat;
+            point.Longitude = movedPoint.Lng;
+            gpsHistoryDS.Save(point);
+        }
+
         route.Origin = origin;
         route.Destination = destination;
         route.IsAproved = true;

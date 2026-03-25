@@ -1,4 +1,5 @@
 ﻿using HA_DailyRoutes.Models;
+using HA_DailyRoutes.Models.DTOs;
 using HA_DailyRoutes.Services;
 
 using Microsoft.AspNetCore.Mvc;
@@ -36,12 +37,31 @@ namespace HA_DailyRoutes.Controllers
             var id = body.GetProperty("id").GetGuid();
             var origin = body.GetProperty("origin").GetString();
             var destination = body.GetProperty("destination").GetString();
-            return Json(HAService.AproveRoute(id, origin, destination));
+            var deletedPointIds = body.GetProperty("deletedPointIds")
+                .EnumerateArray()
+                .Select(x => x.GetGuid())
+                .ToList();
+
+            var movedPoints = body.GetProperty("movedPoints")
+                .EnumerateArray()
+                .Select(x => new MovedPointDTO
+                {
+                    Id = x.GetProperty("id").GetGuid(),
+                    Lat = x.GetProperty("lat").GetDouble(),
+                    Lng = x.GetProperty("lng").GetDouble()
+                })
+                .ToList();
+            return Json(HAService.AproveRoute(id, origin, destination, deletedPointIds, movedPoints));
         }
 
         public IActionResult GetNewRoutes()
         {
             return Json(GuessZoneService.GetNewRoutes());
+        }
+
+        public IActionResult GetNextRoute(Guid id=default)
+        {
+            return Json(GuessZoneService.GetNextRoute(id));
         }
 
         /// <summary>

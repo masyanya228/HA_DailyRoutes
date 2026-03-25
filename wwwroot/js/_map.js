@@ -562,55 +562,51 @@ var RouteManager = (function () {
 
 var RouteApproval = (function () {
 
-    var _allIds      = [];   // все ID новых маршрутов с сервера
-    var _current     = null; // текущий маршрут
-    var _currentIdx  = -1;   // индекс текущего в _allIds
-
-    // Редактор маршрута
-    var _deletedIds    = [];
-    var _movedPoints   = [];
-    var _editorMarkers = [];
-    var _dragMarkers   = [];
-    var _editorPolyline = null;
-    var _editorCoords  = []; // [[id, lat, lng], ...]
+    var _queue   = [];
+    var _current = null;
 
     // ──────────────────────────────────────────────────────
-    // Запуск
+    // Запуск: строим DOM и делаем единственный запрос
     // ──────────────────────────────────────────────────────
     function start() {
         _buildStyles();
         _buildDOM();
-        _fetchRoute(null);
+        _poll(); // единственный запрос при старте
     }
 
     // ──────────────────────────────────────────────────────
-    // Стили
+    // Инъекция стилей
     // ──────────────────────────────────────────────────────
     function _buildStyles() {
         var style = document.createElement('style');
         style.textContent = [
+            // Иконка уведомления
             '#ra-bell{position:fixed;bottom:24px;right:24px;z-index:9999;width:44px;height:44px;background:rgba(15,17,23,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px);transition:transform .15s,background .15s;box-shadow:0 2px 12px rgba(0,0,0,0.4)}',
             '#ra-bell:hover{background:rgba(30,35,50,0.98);transform:scale(1.08)}',
             '#ra-bell svg{width:20px;height:20px;fill:none;stroke:#4f8ef7;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
             '#ra-badge{position:absolute;top:-4px;right:-4px;background:#4f8ef7;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1}',
             '#ra-bell.active{display:flex}',
+            // Нижняя панель
             '#ra-panel{position:fixed;bottom:0;left:0;right:0;z-index:9998;background:rgba(15,17,23,0.97);border-top:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);padding:14px 16px;transform:translateY(100%);transition:transform .25s ease;color:#e8eaf0;font-size:13px}',
             '#ra-panel.visible{transform:translateY(0)}',
+            // Мета-строка (второстепенная)
             '.ra-meta-row{font-size:11px;color:#4b5563;margin-bottom:10px;display:flex;gap:12px}',
+            // Основная строка: поля + кнопки в ряд на десктопе
             '.ra-main-row{display:flex;align-items:flex-end;gap:10px}',
             '.ra-fields{display:flex;gap:10px;flex:1;min-width:0}',
-            '.ra-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}',
-            '.ra-label{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}',
+            '.ra-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}',            '.ra-label{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}',
             '.ra-input-wrap{display:flex;align-items:center;gap:6px}',
             '.ra-input{flex:1;background:#12141c;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:9px 12px;color:#e8eaf0;font-size:14px;font-weight:500;outline:none;box-sizing:border-box;transition:border-color .15s;min-width:0;width:100%}',
             '.ra-input:focus{border-color:#4f8ef7}',
             '.ra-chip{display:inline-flex;align-items:center;padding:3px 8px;background:rgba(79,142,247,0.1);border:1px solid rgba(79,142,247,0.25);border-radius:4px;font-size:11px;color:#4f8ef7;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background .15s}',
             '.ra-chip:hover{background:rgba(79,142,247,0.2)}',
+            // Кнопки — справа на десктопе, снизу на мобилке
             '.ra-actions{display:flex;gap:8px;flex-shrink:0;align-items:flex-end}',
             '.ra-btn-primary{background:#4f8ef7;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;white-space:nowrap;height:38px}',
             '.ra-btn-primary:hover{background:#7eb3ff}',
             '.ra-btn-secondary{background:transparent;color:#6b7280;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;transition:color .15s;white-space:nowrap;height:38px}',
             '.ra-btn-secondary:hover{color:#e8eaf0}',
+            // Мобилка: поля во всю ширину в 2 строки, кнопки снизу
             '@media(max-width:600px){',
             '.ra-main-row{flex-direction:column;align-items:stretch}',
             '.ra-fields{flex-direction:column}',
@@ -624,34 +620,58 @@ var RouteApproval = (function () {
     }
 
     // ──────────────────────────────────────────────────────
-    // DOM
+    // Построение DOM
     // ──────────────────────────────────────────────────────
     function _buildDOM() {
+        // Иконка-колокольчик
         var bell = document.createElement('div');
         bell.id = 'ra-bell';
-        bell.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="ra-badge"></span>';
+        bell.innerHTML = [
+            '<svg viewBox="0 0 24 24">',
+            '  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>',
+            '  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+            '</svg>',
+            '<span id="ra-badge"></span>'
+        ].join('');
         bell.onclick = function () {
+            // Сворачиваем боковую панель
             var panelBody = document.getElementById('panelBody');
             if (panelBody && panelBody.style.display !== 'none') {
                 document.getElementById('panelToggle').innerHTML = '&#9660;';
                 panelBody.style.display = 'none';
             }
-            if (_current) openModal(_current.id);
-            else if (_allIds.length > 0) _fetchRoute(_allIds[0]);
+            var newest = _queue.slice().sort(function (a, b) {
+                return new Date(b.start) - new Date(a.start);
+            })[0];
+            if (newest) openModal(newest.id);
         };
         document.body.appendChild(bell);
 
+        // Нижняя панель
         var panel = document.createElement('div');
         panel.id = 'ra-panel';
         panel.innerHTML = [
-            '<div class="ra-meta-row"><span id="ra-route-time"></span><span id="ra-counter"></span></div>',
+            // Второстепенная информация
+            '<div class="ra-meta-row">',
+            '  <span id="ra-route-time"></span>',
+            '  <span id="ra-counter"></span>',
+            '</div>',
+            // Основная строка
             '<div class="ra-main-row">',
             '  <div class="ra-fields">',
-            '    <div class="ra-field"><div class="ra-label">Откуда</div>',
-            '      <div class="ra-input-wrap"><input class="ra-input" id="ra-origin" type="text" placeholder="Пункт А"><div id="ra-suggest-origin"></div></div>',
+            '    <div class="ra-field">',
+            '      <div class="ra-label">Откуда</div>',
+            '      <div class="ra-input-wrap">',
+            '        <input class="ra-input" id="ra-origin" type="text" placeholder="Пункт А">',
+            '        <div id="ra-suggest-origin"></div>',
+            '      </div>',
             '    </div>',
-            '    <div class="ra-field"><div class="ra-label">Куда</div>',
-            '      <div class="ra-input-wrap"><input class="ra-input" id="ra-destination" type="text" placeholder="Пункт Б"><div id="ra-suggest-destination"></div></div>',
+            '    <div class="ra-field">',
+            '      <div class="ra-label">Куда</div>',
+            '      <div class="ra-input-wrap">',
+            '        <input class="ra-input" id="ra-destination" type="text" placeholder="Пункт Б">',
+            '        <div id="ra-suggest-destination"></div>',
+            '      </div>',
             '    </div>',
             '  </div>',
             '  <div class="ra-actions">',
@@ -665,64 +685,65 @@ var RouteApproval = (function () {
         document.getElementById('ra-skip').onclick    = skip;
         document.getElementById('ra-approve').onclick = approve;
 
+        // ESC
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && _current) close();
         });
 
+        // Кнопка "Назад" браузера
         history.pushState({ ra: true }, '');
         window.addEventListener('popstate', function () {
-            if (_current) { close(); history.pushState({ ra: true }, ''); }
+            if (_current) {
+                close(); // close() сам вызывает _updateBell — колокольчик появится
+                history.pushState({ ra: true }, ''); // не уходим со страницы
+            }
         });
     }
 
     // ──────────────────────────────────────────────────────
-    // Загрузить маршрут с сервера (id = null → первый)
+    // Опрос новых маршрутов
     // ──────────────────────────────────────────────────────
-    function _fetchRoute(id) {
-        var url = '/Home/GetNextRoute' + (id ? '?id=' + id : '');
-        fetch(url)
+    function _poll() {
+        fetch('/Home/GetNewRoutes')
             .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data || !data.route) {
-                    _updateBell();
-                    return;
-                }
-                // Обновляем список всех ID
-                if (Array.isArray(data.allIds)) _allIds = data.allIds;
-
-                _currentIdx = _allIds.indexOf(data.route.id);
-                _current    = data.route;
+            .then(function (routes) {
+                if (!Array.isArray(routes) || !routes.length) return;
+                routes.forEach(function (r) {
+                    if (!_queue.find(function (x) { return x.id === r.id; }))
+                        _queue.push(r);
+                });
+                // Сортируем от свежих к старым
+                _queue.sort(function (a, b) { return new Date(b.start) - new Date(a.start); });
                 _updateBell();
-                //openModal(_current.id);
             })
-            .catch(function (e) { console.error('GetNextRoute:', e); });
+            .catch(function (e) { console.error('GetNewRoutes:', e); });
     }
 
     // ──────────────────────────────────────────────────────
-    // Колокольчик
+    // Обновить иконку уведомления
     // ──────────────────────────────────────────────────────
     function _updateBell() {
         var bell  = document.getElementById('ra-bell');
         var badge = document.getElementById('ra-badge');
-        var remaining = _allIds.length - (_currentIdx + 1);
-        if (_current || remaining > 0) {
+        if (_queue.length > 0) {
             bell.classList.add('active');
-            var total = _allIds.length;
-            badge.textContent = total > 9 ? '9+' : total;
+            badge.textContent = _queue.length > 9 ? '9+' : _queue.length;
         } else {
             bell.classList.remove('active');
         }
     }
 
     // ──────────────────────────────────────────────────────
-    // Открыть панель с маршрутом
+    // Открыть панель
     // ──────────────────────────────────────────────────────
     var _PREVIEW_ID = '__ra_preview__';
 
     function openModal(id) {
-        if (!_current || _current.id !== id) return;
+        _current = _queue.find(function (r) { return r.id === id; });
+        if (!_current) return;
 
-        document.getElementById('ra-counter').textContent    = (_currentIdx + 1) + ' / ' + _allIds.length;
+        var idx = _queue.indexOf(_current);
+        document.getElementById('ra-counter').textContent   = (idx + 1) + ' / ' + _queue.length;
         document.getElementById('ra-route-time').textContent = _fmtDate(_current.start) + ' \u00b7 ' + _current.duration + ' \u00b7 ' + _current.points + ' \u0442\u043e\u0447\u0435\u043a';
 
         _setField('origin',      _current.origin,      _current.suggestedOrigin);
@@ -730,15 +751,14 @@ var RouteApproval = (function () {
 
         _previewOnMap(_current);
 
-        document.getElementById('ra-bell').style.display = 'none';
+        document.getElementById('ra-bell').style.display = 'none'; // скрываем колокольчик
         document.getElementById('ra-panel').classList.add('visible');
     }
 
     // ──────────────────────────────────────────────────────
-    // Предпросмотр + редактор на карте
+    // Предпросмотр маршрута на карте
     // ──────────────────────────────────────────────────────
-    var _pins      = [];
-    var _animFrame = null;
+    var _pins = [];
 
     function _previewOnMap(route) {
         var daySelect = document.getElementById('daySelect');
@@ -750,189 +770,62 @@ var RouteApproval = (function () {
         if (_animFrame) { cancelAnimationFrame(_animFrame); _animFrame = null; }
         RouteManager.removeRoute(_PREVIEW_ID);
         _removePins();
-        _clearEditor();
 
         if (!route.coordinates || !route.coordinates.length) {
             console.warn('RouteApproval: маршрут без координат', route);
             return;
         }
 
-        // Инициализируем состояние редактора
-        _editorCoords = route.coordinates.slice(); // [[id, lat, lng], ...]
-        _deletedIds   = [];
-        _movedPoints  = [];
+        var coords = route.coordinates;
 
-        var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
+        // 1. Fit карты
+        RouteManager.fitTo(coords);
 
-        RouteManager.fitTo(latLngs);
-        _addPin(latLngs[0],                 'А', '#2ecc71', _fmtTime(route.start));
-        _addPin(latLngs[latLngs.length - 1], 'Б', '#e74c3c', _fmtTime(route.end));
+        // 2. Пины А и Б с временем отправления/прибытия
+        _addPin(coords[0],             'А', '#2ecc71', _fmtTime(route.start));
+        _addPin(coords[coords.length - 1], 'Б', '#e74c3c', _fmtTime(route.end));
 
-        _animateRoute(latLngs, '#4f8ef7', function () {
-            // После анимации запускаем редактор
-            _startEditor();
-        });
+        // 3. Анимированный маршрут
+        _animateRoute(coords, '#4f8ef7');
     }
 
-    // ──────────────────────────────────────────────────────
-    // Редактор маршрута
-    // ──────────────────────────────────────────────────────
-    function _startEditor() {
-        _clearEditor();
-
-        var map = RouteManager.getMap();
-        if (!map) return;
-
-        var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
-
-        // Полилайн редактора
-        _editorPolyline = new ymaps.Polyline(latLngs, {}, {
-            strokeColor:   '#4f8ef7',
-            strokeWidth:   5,
-            strokeOpacity: 0.85
-        });
-        map.geoObjects.add(_editorPolyline);
-        RouteManager._setPreviewPolyline(_editorPolyline);
-
-        // Промежуточные точки — кликабельны, удаляются
-        for (var i = 1; i < _editorCoords.length - 1; i++) {
-            _addMidMarker(i);
-        }
-
-        // Крайние точки — перетаскиваемые
-        _addDragMarker(0,                         '#2ecc71');
-        _addDragMarker(_editorCoords.length - 1,   '#e74c3c');
-    }
-
-    function _addMidMarker(idx) {
-        var c   = _editorCoords[idx];
-        var map = RouteManager.getMap();
-
-        var layout = ymaps.templateLayoutFactory.createClass(
-            '<div style="width:12px;height:12px;border-radius:50%;background:#4f8ef7;'
-            + 'border:2px solid #fff;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.4);'
-            + 'position:absolute;transform:translate(-50%,-50%)" title="Нажмите чтобы удалить"></div>'
-        );
-
-        var pm = new ymaps.Placemark([c[1], c[2]], {}, {
-            iconLayout: layout,
-            iconShape:  { type: 'Circle', coordinates: [0, 0], radius: 10 }
-        });
-
-        (function (pointIdx, pointId) {
-            pm.events.add('click', function () {
-                _deletePoint(pointIdx, pointId);
-            });
-        }(idx, c[0]));
-
-        map.geoObjects.add(pm);
-        _editorMarkers.push({ pm: pm, idx: idx });
-    }
-
-    function _deletePoint(idx, pointId) {
-        _deletedIds.push(pointId);
-        _editorCoords.splice(idx, 1);
-
-        // Перерисовываем редактор
-        _clearEditor();
-        var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
-        _editorPolyline = new ymaps.Polyline(latLngs, {}, {
-            strokeColor: '#4f8ef7', strokeWidth: 5, strokeOpacity: 0.85
-        });
-        RouteManager.getMap().geoObjects.add(_editorPolyline);
-        RouteManager._setPreviewPolyline(_editorPolyline);
-
-        for (var i = 1; i < _editorCoords.length - 1; i++) _addMidMarker(i);
-        _addDragMarker(0,                          '#2ecc71');
-        _addDragMarker(_editorCoords.length - 1,    '#e74c3c');
-    }
-
-    function _addDragMarker(idx, color) {
-        var c   = _editorCoords[idx];
-        var map = RouteManager.getMap();
-
-        var layout = ymaps.templateLayoutFactory.createClass(
-            '<div style="width:18px;height:18px;border-radius:50%;background:' + color + ';'
-            + 'border:3px solid #fff;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,0.5);'
-            + 'position:absolute;transform:translate(-50%,-50%)"></div>'
-        );
-
-        var pm = new ymaps.Placemark([c[1], c[2]], {}, {
-            iconLayout:  layout,
-            iconShape:   { type: 'Circle', coordinates: [0, 0], radius: 12 },
-            draggable:   true
-        });
-
-        (function (pointIdx) {
-            pm.events.add('dragend', function () {
-                var newCoords = pm.geometry.getCoordinates();
-                _editorCoords[pointIdx][1] = newCoords[0];
-                _editorCoords[pointIdx][2] = newCoords[1];
-
-                // Обновляем movedPoints
-                var existing = _movedPoints.find(function (p) { return p.id === _editorCoords[pointIdx][0]; });
-                if (existing) {
-                    existing.lat = newCoords[0];
-                    existing.lng = newCoords[1];
-                } else {
-                    _movedPoints.push({ id: _editorCoords[pointIdx][0], lat: newCoords[0], lng: newCoords[1] });
-                }
-
-                // Обновляем полилайн
-                var latLngs = _editorCoords.map(function (cc) { return [cc[1], cc[2]]; });
-                _editorPolyline.geometry.setCoordinates(latLngs);
-            });
-        }(idx));
-
-        map.geoObjects.add(pm);
-        _dragMarkers.push(pm);
-    }
-
-    function _clearEditor() {
-        var map = RouteManager.getMap();
-        if (!map) return;
-        _editorMarkers.forEach(function (m) { map.geoObjects.remove(m.pm); });
-        _editorMarkers = [];
-        _dragMarkers.forEach(function (m) { map.geoObjects.remove(m); });
-        _dragMarkers = [];
-        if (_editorPolyline) { map.geoObjects.remove(_editorPolyline); _editorPolyline = null; }
-    }
-
-    // ──────────────────────────────────────────────────────
-    // Пины А и Б
-    // ──────────────────────────────────────────────────────
     function _addPin(coords, label, color, time) {
         if (!RouteManager.getMap()) return;
+
         var layout = ymaps.templateLayoutFactory.createClass(
             '<div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);text-align:center;white-space:nowrap">'
-            + '<div style="background:' + color + ';color:#fff;font-size:13px;font-weight:700;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.45);margin:0 auto">' + label + '</div>'
-            + (time ? '<div style="font-size:11px;font-weight:600;color:#fff;background:rgba(0,0,0,0.6);border-radius:4px;padding:2px 6px;margin-top:4px;display:inline-block">' + time + '</div>' : '')
+            + '<div style="background:' + color + ';color:#fff;font-size:13px;font-weight:700;'
+            + 'width:30px;height:30px;border-radius:50%;display:flex;align-items:center;'
+            + 'justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.45);margin:0 auto">'
+            + label + '</div>'
+            + (time ? '<div style="font-size:11px;font-weight:600;color:#fff;background:rgba(0,0,0,0.6);'
+            + 'border-radius:4px;padding:2px 6px;margin-top:4px;display:inline-block">' + time + '</div>' : '')
             + '</div>'
         );
-        var height = time ? 58 : 34;
-        var pm = new ymaps.Placemark(coords, { balloonContent: label + (time ? ' \u00b7 ' + time : '') }, {
-            iconLayout: layout,
-            iconShape:  { type: 'Rectangle', coordinates: [[-15, -height], [15, 0]] }
-        });
+
+        var height = time ? 58 : 34; // высота иконки с учётом времени
+        var pm = new ymaps.Placemark(coords,
+            { balloonContent: label + (time ? ' · ' + time : '') },
+            {
+                iconLayout: layout,
+                iconShape:  { type: 'Rectangle', coordinates: [[-15, -height], [15, 0]] }
+            }
+        );
         RouteManager.getMap().geoObjects.add(pm);
         _pins.push(pm);
-    }
-
-    function _removePins() {
-        if (typeof ymaps === 'undefined') return;
-        _pins.forEach(function (pm) { RouteManager.getMap().geoObjects.remove(pm); });
-        _pins = [];
     }
 
     // ──────────────────────────────────────────────────────
     // Форматирование дат
     // ──────────────────────────────────────────────────────
-    var _months = ['\u044f\u043d\u0432\u0430\u0440\u044f','\u0444\u0435\u0432\u0440\u0430\u043b\u044f','\u043c\u0430\u0440\u0442\u0430','\u0430\u043f\u0440\u0435\u043b\u044f','\u043c\u0430\u044f','\u0438\u044e\u043d\u044f','\u0438\u044e\u043b\u044f','\u0430\u0432\u0433\u0443\u0441\u0442\u0430','\u0441\u0435\u043d\u0442\u044f\u0431\u0440\u044f','\u043e\u043a\u0442\u044f\u0431\u0440\u044f','\u043d\u043e\u044f\u0431\u0440\u044f','\u0434\u0435\u043a\u0430\u0431\u0440\u044f'];
+    var _months = ['января','февраля','марта','апреля','мая','июня',
+                   'июля','августа','сентября','октября','ноября','декабря'];
 
     function _fmtDate(iso) {
         if (!iso) return '';
         var d = new Date(iso);
-        return d.getDate() + ' ' + _months[d.getMonth()] + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+        return d.getDate() + ' ' + _months[d.getMonth()] + ' '
+             + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
     }
 
     function _fmtTime(iso) {
@@ -942,42 +835,57 @@ var RouteApproval = (function () {
     }
 
     // ──────────────────────────────────────────────────────
-    // Анимация маршрута за 3 секунды, callback по завершению
+    // Анимация маршрута — рисуем точки постепенно за 3 сек
     // ──────────────────────────────────────────────────────
-    function _animateRoute(latLngs, color, onDone) {
+    var _animFrame = null;
+
+    function _animateRoute(coords, color) {
         if (_animFrame) cancelAnimationFrame(_animFrame);
 
         var map      = RouteManager.getMap();
-        var duration = 3000;
-        var startTs  = null;
-        var total    = latLngs.length;
+        var duration = 3000; // мс
+        var start    = null;
+        var total    = coords.length;
 
+        // Начальная пустая линия
         var polyline = new ymaps.Polyline([], {}, {
-            strokeColor: color || '#4f8ef7', strokeWidth: 5, strokeOpacity: 0.85
+            strokeColor:   color || '#4f8ef7',
+            strokeWidth:   5,
+            strokeOpacity: 0.85
         });
         map.geoObjects.add(polyline);
+
+        // Сохраняем под _PREVIEW_ID чтобы removeRoute его убрал
         RouteManager._setPreviewPolyline(polyline);
 
-        function step(ts) {
-            if (!startTs) startTs = ts;
-            var progress = Math.min((ts - startTs) / duration, 1);
+        function step(timestamp) {
+            if (!start) start = timestamp;
+            var elapsed  = timestamp - start;
+            var progress = Math.min(elapsed / duration, 1);
             var count    = Math.max(2, Math.round(progress * total));
-            polyline.geometry.setCoordinates(latLngs.slice(0, count));
+
+            polyline.geometry.setCoordinates(coords.slice(0, count));
+
             if (progress < 1) {
                 _animFrame = requestAnimationFrame(step);
             } else {
                 _animFrame = null;
-                if (onDone) onDone();
             }
         }
+
         _animFrame = requestAnimationFrame(step);
     }
 
+    function _removePins() {
+        if (typeof ymaps === 'undefined') return;
+        _pins.forEach(function (pm) { RouteManager.getMap().geoObjects.remove(pm); });
+        _pins = [];
+    }
+
     // ──────────────────────────────────────────────────────
-    // Восстановить маршруты дня
+    // Восстановить маршруты выбранного дня
     // ──────────────────────────────────────────────────────
     function _restoreDay() {
-        _clearEditor();
         RouteManager.removeRoute(_PREVIEW_ID);
         _removePins();
         var daySelect = document.getElementById('daySelect');
@@ -985,13 +893,15 @@ var RouteApproval = (function () {
     }
 
     // ──────────────────────────────────────────────────────
-    // Поле ввода + подсказка
+    // Установить поле + подсказку
     // ──────────────────────────────────────────────────────
     function _setField(field, value, suggestion) {
         var input     = document.getElementById('ra-' + field);
         var suggestEl = document.getElementById('ra-suggest-' + field);
-        input.value         = value || '';
+
+        input.value       = value || '';
         suggestEl.innerHTML = '';
+
         if (suggestion && suggestion !== value) {
             var chip = document.createElement('div');
             chip.className   = 'ra-chip';
@@ -1009,64 +919,55 @@ var RouteApproval = (function () {
     function approve() {
         if (!_current) return;
         var payload = {
-            id:             _current.id,
-            origin:         document.getElementById('ra-origin').value,
-            destination:    document.getElementById('ra-destination').value,
-            deletedPointIds: _deletedIds,
-            movedPoints:    _movedPoints
+            id:          _current.id,
+            origin:      document.getElementById('ra-origin').value,
+            destination: document.getElementById('ra-destination').value
         };
         fetch('/Home/AproveRoute', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(payload)
         })
-        .then(function () { _goNext(); })
+        .then(function () {
+            _removeFromQueue(_current.id);
+            _nextOrClose();
+        })
         .catch(function (e) { console.error('AproveRoute:', e); });
     }
 
     // ──────────────────────────────────────────────────────
-    // Пропустить — запросить следующий, не удаляя из очереди
+    // Пропустить маршрут (убирает из очереди)
     // ──────────────────────────────────────────────────────
     function skip() {
-        var nextIdx = _currentIdx + 1;
-        if (nextIdx < _allIds.length) {
-            _current = null;
-            _fetchRoute(_allIds[nextIdx]);
-        } else {
-            _closePanel();
-        }
+        _removeFromQueue(_current && _current.id);
+        _nextOrClose();
     }
 
     // ──────────────────────────────────────────────────────
-    // После сохранения — следующий маршрут
-    // ──────────────────────────────────────────────────────
-    function _goNext() {
-        _allIds.splice(_currentIdx, 1); // убираем сохранённый из списка
-        if (_allIds.length > 0) {
-            var nextId = _allIds[Math.min(_currentIdx, _allIds.length - 1)];
-            _current   = null;
-            _fetchRoute(nextId);
-        } else {
-            _closePanel();
-        }
-    }
-
-    // ──────────────────────────────────────────────────────
-    // Закрыть панель без действий (маршрут остаётся в очереди)
+    // Закрыть панель (маршрут остаётся в очереди)
     // ──────────────────────────────────────────────────────
     function close() {
         if (!_current) return;
         _restoreDay();
-        _current = null;
         document.getElementById('ra-panel').classList.remove('visible');
+        _updateBell(); // возвращаем колокольчик (если очередь не пуста)
+        _current = null;
+    }
+
+    function _removeFromQueue(id) {
+        _queue = _queue.filter(function (r) { return r.id !== id; });
         _updateBell();
     }
 
-    function _closePanel() {
-        _current = null;
-        _restoreDay();
-        document.getElementById('ra-panel').classList.remove('visible');
-        _updateBell();
+    function _nextOrClose() {
+        if (_queue.length > 0) {
+            openModal(_queue[0].id);
+        } else {
+            _restoreDay();
+            document.getElementById('ra-panel').classList.remove('visible');
+            _updateBell(); // очередь пуста — колокольчик скроется сам
+            _current = null;
+        }
     }
 
     // ──────────────────────────────────────────────────────

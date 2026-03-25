@@ -1,8 +1,11 @@
 ﻿using DDDHibernate.DomainServices.DomainStructure;
 using DDDHibernate.Xtensions;
 
+using HA_DailyRoutes.APIs;
 using HA_DailyRoutes.Entities;
 using HA_DailyRoutes.Models.DTOs;
+
+using System.Linq;
 
 namespace HA_DailyRoutes.Services
 {
@@ -74,26 +77,33 @@ namespace HA_DailyRoutes.Services
             }).ToArray();
         }
 
-        public object GetNextRoute()
+        public object GetNextRoute(Guid id = default)
         {
-            var route = gpsRouteDS.GetAll().Where(x => !x.IsAproved).OrderBy(x => x.Start).FirstOrDefault();
+            var gpsRoutes = gpsRouteDS.GetAll().Where(x => !x.IsAproved).OrderBy(x => x.Start).ToList();
+            var route = id == default
+                ? gpsRoutes.FirstOrDefault()
+                : gpsRoutes.FirstOrDefault(x => x.Id == id);
             if (route is null)
                 return null;
             GuessRoute(route);
             return new
             {
-                route.Id,
-                Start = route.Start,
-                End = route.End,
-                Duration = $"{route.Duration.TotalMinutes.Round()} мин.",
-                Points = route.GpsPoints.Count,
-                Origin = route.SuggestedOrigin == null ? route.Origin : "",
-                Destination = route.SuggestedDestination == null ? route.Destination : "",
-                SuggestedOrigin = route.SuggestedOrigin,
-                SuggestedDestination = route.SuggestedDestination,
-                Coordinates = route.GetRoutePoints()
-                    .Select(p => new List<double> { p.Latitude, p.Longitude })
-                    .ToList()
+                route = new
+                {
+                    route.Id,
+                    Start = route.Start,
+                    End = route.End,
+                    Duration = $"{route.Duration.TotalMinutes.Round()} мин.",
+                    Points = route.GpsPoints.Count,
+                    Origin = route.SuggestedOrigin == null ? route.Origin : "",
+                    Destination = route.SuggestedDestination == null ? route.Destination : "",
+                    SuggestedOrigin = route.SuggestedOrigin,
+                    SuggestedDestination = route.SuggestedDestination,
+                    Coordinates = route.GetRoutePoints()
+                        .Select(p => new object[]{ p.Id, p.Latitude, p.Longitude })
+                        .ToList(),
+                },
+                AllIds = gpsRoutes.Select(x => x.Id).ToList(),
             };
         }
 
@@ -222,7 +232,6 @@ namespace HA_DailyRoutes.Services
                         weight = Math.Round(1.0 - (x.GetRadius() - 1.0) / 99.0, 3)
                     })
                     .Where(x => x.weight > 0)
-                    .Take(20)
                 );
         }
     }
