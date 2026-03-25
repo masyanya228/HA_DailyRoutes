@@ -1,5 +1,4 @@
-﻿using HA_DailyRoutes.Entities;
-using HA_DailyRoutes.Models.DTOs.HomeAssistant;
+﻿using HA_DailyRoutes.Models.DTOs.HomeAssistant;
 
 using Newtonsoft.Json;
 
@@ -7,7 +6,7 @@ using RestSharp;
 
 using System.Text;
 
-namespace HA_DailyRoutes
+namespace HA_DailyRoutes.APIs
 {
     public class HomeAssistantApi : IHomeAssistantApi
     {

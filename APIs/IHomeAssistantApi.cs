@@ -1,6 +1,6 @@
 ﻿using HA_DailyRoutes.Models.DTOs.HomeAssistant;
 
-namespace HA_DailyRoutes
+namespace HA_DailyRoutes.APIs
 {
     public interface IHomeAssistantApi
     {

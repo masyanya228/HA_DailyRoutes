@@ -219,12 +219,33 @@ var RouteManager = (function () {
         noMsg.id = 'noRoutesMsg';
         _css(noMsg, { fontSize: '13px', color: '#999' });
 
+        // Кнопка тепловой карты
+        var heatmapDivider = document.createElement('hr');
+        _css(heatmapDivider, { margin: '10px 0', border: 'none', borderTop: '1px solid #eee' });
+
+        var heatmapBtn = document.createElement('button');
+        heatmapBtn.id          = 'heatmapToggle';
+        heatmapBtn.textContent = '🌡 Тепловая карта';
+        _css(heatmapBtn, {
+            width:        '100%',
+            padding:      '7px 4px',
+            fontSize:     '13px',
+            borderRadius: '5px',
+            border:       '1px solid #ccc',
+            background:   '#fff',
+            cursor:       'pointer',
+            boxSizing:    'border-box'
+        });
+        heatmapBtn.onclick = function () { HeatmapLayer.toggle(); }
+
         body.appendChild(dayLabel);
         body.appendChild(daySelect);
         body.appendChild(divider);
         body.appendChild(routeLabel);
         body.appendChild(routeList);
         body.appendChild(noMsg);
+        body.appendChild(heatmapDivider);
+        body.appendChild(heatmapBtn);
 
         panel.appendChild(header);
         panel.appendChild(body);
@@ -347,8 +368,6 @@ var RouteManager = (function () {
     function _routeColor(index, total) {
         if (total <= 1) return '#f59e0b';
         var t   = index / (total - 1);         // 0..1
-        //var from = { r: 245, g: 158, b: 11  }; // #f59e0b янтарь
-        //var to = { r: 99, g: 102, b: 241 }; // #6366f1 индиго
         var from = { r: 239, g: 68, b: 68 }; // #f59e0b янтарь
         var to = { r: 59, g: 130, b: 246 }; // #6366f1 индиго
         var r = Math.round(from.r + (to.r - from.r) * t);
@@ -962,6 +981,142 @@ var RouteApproval = (function () {
         close:     close
     };
 
+}());
+
+// ============================================================
+// HEATMAP LAYER — тепловая карта исторических точек
+// ============================================================
+
+var HeatmapLayer = (function () {
+    var _heatmap = null;
+    var _active = false;
+
+    // ──────────────────────────────────────────────────────
+    // Переключить тепловую карту
+    // ──────────────────────────────────────────────────────
+    function toggle() {
+        var btn = document.getElementById('heatmapToggle');
+        if (_active) {
+            _hide();
+            if (btn) {
+                btn.textContent = '🌡 Тепловая карта';
+                btn.style.background = '#fff';
+            }
+        } else {
+            if (_heatmap) {
+                _show();
+                if (btn) {
+                    btn.textContent = '✕ Скрыть карту';
+                    btn.style.background = '#fef3c7';
+                }
+            } else {
+                if (btn) {
+                    btn.textContent = '⏳ Загрузка...';
+                    btn.disabled = true;
+                }
+                _load(function () {
+                    if (btn) {
+                        btn.textContent = '✕ Скрыть карту';
+                        btn.style.background = '#fef3c7';
+                        btn.disabled = false;
+                    }
+                });
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Загрузить точки и построить heatmap (актуальная версия)
+    // ──────────────────────────────────────────────────────
+    function _load(onDone) {
+        console.log('[Heatmap] fetch start');
+        fetch('/Home/HeatmapPoints')
+            .then(function (r) { return r.json(); })
+            .then(function (points) {
+                console.log('[Heatmap] points loaded:', points.length);
+
+                if (!ymaps || !ymaps.modules) {
+                    console.error('[Heatmap] ymaps.modules недоступен');
+                    _resetButton();
+                    return;
+                }
+
+                ymaps.modules.require(['Heatmap'], function (HeatmapModule) {
+                    console.log('[Heatmap] module loaded');
+
+                    // Преобразуем точки в GeoJSON (ВАЖНО: [lng, lat]!)
+                    var features = points.map(function (p) {
+                        return {
+                            id: p.id || Math.random().toString(36),
+                            type: 'Feature',
+                            geometry: {
+                                type: 'Point',
+                                coordinates: [p.lat, p.lng]   // ← исправлено!
+                            },
+                            properties: {
+                                weight: p.weight || 1
+                            }
+                        };
+                    });
+
+                    var data = {
+                        type: 'FeatureCollection',
+                        features: features
+                    };
+
+                    var options = {
+                        radius: 20,
+                        dissipating: true,
+                        opacity: 0.8,
+                        intensityOfMidpoint: 0.2,
+                        gradient: {
+                            0.0: 'rgba(0, 0, 255, 0)',
+                            0.3: 'rgba(0, 255, 255, 0.6)',
+                            0.6: 'rgba(0, 255, 0, 0.8)',
+                            0.8: 'rgba(255, 165, 0, 0.9)',
+                            1.0: 'rgba(255, 0, 0, 1)'
+                        }
+                    };
+
+                    _heatmap = new HeatmapModule(data, options);
+
+                    _show();
+                    if (onDone) onDone();
+                }, function (err) {
+                    console.error('[Heatmap] модуль не загружен:', err);
+                    console.warn('[Heatmap] Убедитесь, что подключён heatmap.min.js (см. выше)');
+                    _resetButton();
+                });
+            })
+            .catch(function (e) {
+                console.error('[Heatmap] ошибка загрузки точек:', e);
+                _resetButton();
+            });
+    }
+
+    function _show() {
+        if (_heatmap) {
+            _heatmap.setMap(RouteManager.getMap());
+            _active = true;
+        }
+    }
+
+    function _hide() {
+        if (_heatmap) {
+            _heatmap.setMap(null);
+            _active = false;
+        }
+    }
+
+    function _resetButton() {
+        var btn = document.getElementById('heatmapToggle');
+        if (btn) {
+            btn.textContent = '🌡 Тепловая карта';
+            btn.disabled = false;
+        }
+    }
+
+    return { toggle: toggle };
 }());
 
 // ============================================================

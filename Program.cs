@@ -6,6 +6,7 @@ using DDDHibernate.Xtensions;
 using HA_DailyRoutes;
 using HA_DailyRoutes.Entities;
 using HA_DailyRoutes.Repositories;
+using HA_DailyRoutes.Services;
 
 using Microsoft.Win32;
 
@@ -31,6 +32,7 @@ internal class Program
         builder.Services.AddResponseCaching();
 
         builder.Services.AddSingleton(typeof(HAService));
+        builder.Services.AddSingleton(typeof(GuessZoneService));
         builder.Services.AddSingleton(typeof(IHomeAssistantApi), typeof(HomeAssistantApi));
         builder.Services.AddSingleton(typeof(IRepository<GpsRoute>), typeof(GpsRouteRepository));
 

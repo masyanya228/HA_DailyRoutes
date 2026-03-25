@@ -1,4 +1,5 @@
-using HA_DailyRoutes.Models;
+﻿using HA_DailyRoutes.Models;
+using HA_DailyRoutes.Services;
 
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,11 +10,13 @@ namespace HA_DailyRoutes.Controllers
 {
     public class HomeController : Controller
     {
-        public HAService HAService { get; }
+        public readonly HAService HAService;
+        public readonly GuessZoneService GuessZoneService;
 
-        public HomeController(HAService hAService)
+        public HomeController(HAService hAService, GuessZoneService guessZoneService)
         {
             HAService = hAService;
+            GuessZoneService = guessZoneService;
         }
 
         public IActionResult Index()
@@ -38,7 +41,15 @@ namespace HA_DailyRoutes.Controllers
 
         public IActionResult GetNewRoutes()
         {
-            return Json(HAService.GetNewRoutes());
+            return Json(GuessZoneService.GetNewRoutes());
+        }
+
+        /// <summary>
+        /// Возвращает GPS точки зон для тепловой карты
+        /// </summary>
+        public IActionResult HeatmapPoints()
+        {
+            return Json(GuessZoneService.GetZonesPoints());
         }
 
         public IActionResult Privacy()

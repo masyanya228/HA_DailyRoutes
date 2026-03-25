@@ -1,6 +1,4 @@
-﻿using DDDHibernate.Models.Entities;
-
-using HA_DailyRoutes.Models.DTOs.HomeAssistant;
+﻿using HA_DailyRoutes.Models.DTOs.HomeAssistant;
 
 namespace HA_DailyRoutes.Entities
 {
