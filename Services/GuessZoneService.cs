@@ -245,6 +245,7 @@ namespace HA_DailyRoutes.Services
         private ZoneWithGpsHistoryDTO? GuessZone(GpsHistory current)
         {
             const double uncertaintyCoef = 2.5;
+            const double currentRadiusBoost = 300;
 
             var scores = new Dictionary<ZoneWithGpsHistoryDTO, double>();
 
@@ -253,7 +254,7 @@ namespace HA_DailyRoutes.Services
                 scores.Add(zone, 0);
                 foreach (var point in zone.HistoryPoints)
                 {
-                    var currentRadius = (current.GetRadius() + point.GetRadius()) * uncertaintyCoef;
+                    var currentRadius = (current.GetRadius() + currentRadiusBoost) + point.GetRadius() * uncertaintyCoef;
                     var distance = point.GetDistance(current.Latitude, current.Longitude);
                     if (distance > currentRadius)
                         continue;
