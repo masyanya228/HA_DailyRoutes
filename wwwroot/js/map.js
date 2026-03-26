@@ -673,9 +673,9 @@ var RouteApproval = (function () {
             '    </div>',
             '  </div>',
             '  <div class="ra-actions">',
-            '    <button class="ra-btn-secondary" id="ra-skip">Пропустить</button>',
-            '    <button class="ra-btn-reset"     id="ra-reset">&#8635; Сбросить</button>',
-            '    <button class="ra-btn-danger"    id="ra-delete">Удалить</button>',
+            '    <button class="ra-btn-secondary" id="ra-skip"><i class="fa fa-share"></i></button>',
+            '    <button class="ra-btn-reset"     id="ra-reset"><i class="fa fa-refresh"></i></button>',
+            '    <button class="ra-btn-danger"    id="ra-delete"><i class="fa fa-trash"></i></button>',
             '    <button class="ra-btn-primary"   id="ra-approve">Сохранить</button>',
             '  </div>',
             '</div>'
