@@ -453,12 +453,13 @@ var RouteManager = (function () {
         routes.forEach(function (route) {
             var row = document.createElement('label');
             _css(row, {
-                display:       'flex',
-                alignItems:    'center',
-                padding:       '6px 0',
-                cursor:        'pointer',
-                borderBottom:  '1px solid #f0f0f0',
-                gap:           '8px'
+                display: 'flex',
+                alignItems: 'center',
+                padding: '6px 0',
+                cursor: 'pointer',
+                borderBottom: '1px solid #f0f0f0',
+                gap: '8px',
+                userSelect: "none"
             });
 
             var checkbox     = document.createElement('input');
