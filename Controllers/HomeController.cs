@@ -25,12 +25,23 @@ namespace HA_DailyRoutes.Controllers
             return View();
         }
 
+
+        /// <summary>
+        /// Возвращает все маршруты
+        /// </summary>
+        /// <param name="days"></param>
+        /// <returns></returns>
         [ResponseCache(Duration = 60)]
         public IActionResult Routes(int days = 30)
         {
             return Json(HAService.GetHistory(days));
         }
 
+        /// <summary>
+        /// Подтверждает маршрут
+        /// </summary>
+        /// <param name="body"></param>
+        /// <returns></returns>
         [HttpPost]
         public IActionResult AproveRoute([FromBody] JsonElement body)
         {
@@ -54,11 +65,21 @@ namespace HA_DailyRoutes.Controllers
             return Json(HAService.AproveRoute(id, origin, destination, deletedPointIds, movedPoints));
         }
 
+        /// <summary>
+        /// Возвращает все новые маршруты
+        /// </summary>
+        /// <returns></returns>
+        [Obsolete("Нагружает систему", true)]
         public IActionResult GetNewRoutes()
         {
             return Json(GuessZoneService.GetNewRoutes());
         }
 
+        /// <summary>
+        /// Возвращает следующий новый маршрут
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
         public IActionResult GetNextRoute(Guid id=default)
         {
             return Json(GuessZoneService.GetNextRoute(id));
@@ -70,11 +91,6 @@ namespace HA_DailyRoutes.Controllers
         public IActionResult HeatmapPoints()
         {
             return Json(GuessZoneService.GetZonesPoints());
-        }
-
-        public IActionResult Privacy()
-        {
-            return View();
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
