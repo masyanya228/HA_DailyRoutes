@@ -1165,7 +1165,7 @@ var HeatmapLayer = (function () {
 
                     var options = {
                         radius: 20,
-                        dissipating: true,
+                        dissipating: false,
                         opacity: 0.8,
                         intensityOfMidpoint: 0.2,
                         gradient: {
