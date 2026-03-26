@@ -38,34 +38,6 @@ namespace HA_DailyRoutes.Controllers
         }
 
         /// <summary>
-        /// Подтверждает маршрут
-        /// </summary>
-        /// <param name="body"></param>
-        /// <returns></returns>
-        [HttpPost]
-        public IActionResult AproveRoute([FromBody] JsonElement body)
-        {
-            var id = body.GetProperty("id").GetGuid();
-            var origin = body.GetProperty("origin").GetString();
-            var destination = body.GetProperty("destination").GetString();
-            var deletedPointIds = body.GetProperty("deletedPointIds")
-                .EnumerateArray()
-                .Select(x => x.GetGuid())
-                .ToList();
-
-            var movedPoints = body.GetProperty("movedPoints")
-                .EnumerateArray()
-                .Select(x => new MovedPointDTO
-                {
-                    Id = x.GetProperty("id").GetGuid(),
-                    Lat = x.GetProperty("lat").GetDouble(),
-                    Lng = x.GetProperty("lng").GetDouble()
-                })
-                .ToList();
-            return Json(HAService.AproveRoute(id, origin, destination, deletedPointIds, movedPoints));
-        }
-
-        /// <summary>
         /// Возвращает все новые маршруты
         /// </summary>
         /// <returns></returns>
@@ -83,6 +55,46 @@ namespace HA_DailyRoutes.Controllers
         public IActionResult GetNextRoute(Guid id=default)
         {
             return Json(GuessZoneService.GetNextRoute(id));
+        }
+
+        /// <summary>
+        /// Подтверждает маршрут
+        /// </summary>
+        /// <param name="body"></param>
+        /// <returns></returns>
+        [HttpPost]
+        public IActionResult AproveRoute([FromBody] JsonElement body)
+        {
+            var id = body.GetProperty("id").GetGuid();
+            var origin = body.GetProperty("origin").GetString();
+            var destination = body.GetProperty("destination").GetString();
+            if (!body.GetProperty("splitPointId").TryGetGuid(out Guid splitPointId))
+                splitPointId = Guid.Empty;
+            var deletedPointIds = body.GetProperty("deletedPointIds")
+                .EnumerateArray()
+                .Select(x => x.GetGuid())
+                .ToList();
+
+            var movedPoints = body.GetProperty("movedPoints")
+                .EnumerateArray()
+                .Select(x => new MovedPointDTO
+                {
+                    Id = x.GetProperty("id").GetGuid(),
+                    Lat = x.GetProperty("lat").GetDouble(),
+                    Lng = x.GetProperty("lng").GetDouble()
+                })
+                .ToList();
+            return Json(GuessZoneService.AproveRoute(id, origin, destination, splitPointId, deletedPointIds, movedPoints));
+        }
+
+        /// <summary>
+        /// Возвращает следующий новый маршрут
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        public IActionResult DeleteRoute(Guid id)
+        {
+            return Json(GuessZoneService.DeleteRoute(id));
         }
 
         /// <summary>

@@ -175,3 +175,7 @@
         add column Name varchar(255)
     create index idx_gpsroutes_startat on GpsRoutes (StartAt)
     create index idx_gpsroutes_endat on GpsRoutes (EndAt)
+    alter table GpsRoutes 
+        add column IsDeleted boolean
+    alter table GpsRoutes 
+        add column DeletedStamp timestamp

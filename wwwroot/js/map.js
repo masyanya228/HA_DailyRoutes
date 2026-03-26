@@ -569,10 +569,14 @@ var RouteApproval = (function () {
     // Редактор маршрута
     var _deletedIds    = [];
     var _movedPoints   = [];
+    var _splitPointId  = null;
+    var _origCoords    = []; // исходные координаты для сброса
     var _editorMarkers = [];
     var _dragMarkers   = [];
-    var _editorPolyline = null;
+    var _editorPolyline  = null;
+    var _editorPolyline2 = null; // серая часть после разделения
     var _editorCoords  = []; // [[id, lat, lng], ...]
+    var _pointMenu     = null; // текущее открытое контекстное меню
 
     // ──────────────────────────────────────────────────────
     // Запуск
@@ -611,6 +615,14 @@ var RouteApproval = (function () {
             '.ra-btn-primary:hover{background:#7eb3ff}',
             '.ra-btn-secondary{background:transparent;color:#6b7280;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;transition:color .15s;white-space:nowrap;height:38px}',
             '.ra-btn-secondary:hover{color:#e8eaf0}',
+            '.ra-btn-reset{background:transparent;color:#6b7280;border:1px solid rgba(255,255,255,0.08);border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;transition:color .15s;white-space:nowrap;height:38px}',
+            '.ra-btn-reset:hover{color:#f87171}',
+            '.ra-btn-danger{background:transparent;color:#f87171;border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;transition:background .15s;white-space:nowrap;height:38px}',
+            '.ra-btn-danger:hover{background:rgba(239,68,68,0.15)}',
+            '.ra-point-menu{position:fixed;z-index:10001;background:rgba(15,17,23,0.97);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:flex;flex-direction:column;gap:2px;min-width:160px}',
+            '.ra-point-menu button{background:transparent;border:none;color:#e8eaf0;font-size:12px;padding:7px 12px;border-radius:5px;cursor:pointer;text-align:left;white-space:nowrap}',
+            '.ra-point-menu button:hover{background:rgba(255,255,255,0.08)}',
+            '.ra-point-menu .menu-danger:hover{background:rgba(239,68,68,0.15);color:#f87171}',
             '@media(max-width:600px){',
             '.ra-main-row{flex-direction:column;align-items:stretch}',
             '.ra-fields{flex-direction:column}',
@@ -631,13 +643,19 @@ var RouteApproval = (function () {
         bell.id = 'ra-bell';
         bell.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="ra-badge"></span>';
         bell.onclick = function () {
+            // Сворачиваем боковую панель
             var panelBody = document.getElementById('panelBody');
             if (panelBody && panelBody.style.display !== 'none') {
                 document.getElementById('panelToggle').innerHTML = '&#9660;';
                 panelBody.style.display = 'none';
             }
-            if (_current) openModal(_current.id);
-            else if (_allIds.length > 0) _fetchRoute(_allIds[0]);
+            if (_current) {
+                openModal(_current.id);
+            } else if (_allIds.length > 0) {
+                // Грузим маршрут по текущему индексу (или первый)
+                var idx = Math.min(_currentIdx, _allIds.length - 1);
+                _fetchRoute(_allIds[Math.max(idx, 0)]);
+            }
         };
         document.body.appendChild(bell);
 
@@ -656,6 +674,8 @@ var RouteApproval = (function () {
             '  </div>',
             '  <div class="ra-actions">',
             '    <button class="ra-btn-secondary" id="ra-skip">Пропустить</button>',
+            '    <button class="ra-btn-reset"     id="ra-reset">&#8635; Сбросить</button>',
+            '    <button class="ra-btn-danger"    id="ra-delete">Удалить</button>',
             '    <button class="ra-btn-primary"   id="ra-approve">Сохранить</button>',
             '  </div>',
             '</div>'
@@ -664,6 +684,8 @@ var RouteApproval = (function () {
 
         document.getElementById('ra-skip').onclick    = skip;
         document.getElementById('ra-approve').onclick = approve;
+        document.getElementById('ra-delete').onclick  = deleteRoute;
+        document.getElementById('ra-reset').onclick   = resetEditor;
 
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && _current) close();
@@ -678,7 +700,7 @@ var RouteApproval = (function () {
     // ──────────────────────────────────────────────────────
     // Загрузить маршрут с сервера (id = null → первый)
     // ──────────────────────────────────────────────────────
-    function _fetchRoute(id) {
+    function _fetchRoute(id, onDone) {
         var url = '/Home/GetNextRoute' + (id ? '?id=' + id : '');
         fetch(url)
             .then(function (r) { return r.json(); })
@@ -687,13 +709,11 @@ var RouteApproval = (function () {
                     _updateBell();
                     return;
                 }
-                // Обновляем список всех ID
                 if (Array.isArray(data.allIds)) _allIds = data.allIds;
-
                 _currentIdx = _allIds.indexOf(data.route.id);
                 _current    = data.route;
                 _updateBell();
-                //openModal(_current.id);
+                if (onDone) onDone();
             })
             .catch(function (e) { console.error('GetNextRoute:', e); });
     }
@@ -704,11 +724,10 @@ var RouteApproval = (function () {
     function _updateBell() {
         var bell  = document.getElementById('ra-bell');
         var badge = document.getElementById('ra-badge');
-        var remaining = _allIds.length - (_currentIdx + 1);
-        if (_current || remaining > 0) {
+        var count = _allIds.length;
+        if (count > 0) {
             bell.classList.add('active');
-            var total = _allIds.length;
-            badge.textContent = total > 9 ? '9+' : total;
+            badge.textContent = count > 9 ? '9+' : count;
         } else {
             bell.classList.remove('active');
         }
@@ -758,9 +777,11 @@ var RouteApproval = (function () {
         }
 
         // Инициализируем состояние редактора
-        _editorCoords = route.coordinates.slice(); // [[id, lat, lng], ...]
-        _deletedIds   = [];
-        _movedPoints  = [];
+        _editorCoords  = route.coordinates.slice(); // [[id, lat, lng], ...]
+        _origCoords    = route.coordinates.slice();
+        _deletedIds    = [];
+        _movedPoints   = [];
+        _splitPointId  = null;
 
         var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
 
@@ -769,49 +790,24 @@ var RouteApproval = (function () {
         _addPin(latLngs[latLngs.length - 1], 'Б', '#e74c3c', _fmtTime(route.end));
 
         _animateRoute(latLngs, '#4f8ef7', function () {
-            // После анимации запускаем редактор
-            _startEditor();
+            _redrawEditor();
         });
     }
 
     // ──────────────────────────────────────────────────────
     // Редактор маршрута
     // ──────────────────────────────────────────────────────
-    function _startEditor() {
-        _clearEditor();
-
-        var map = RouteManager.getMap();
-        if (!map) return;
-
-        var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
-
-        // Полилайн редактора
-        _editorPolyline = new ymaps.Polyline(latLngs, {}, {
-            strokeColor:   '#4f8ef7',
-            strokeWidth:   5,
-            strokeOpacity: 0.85
-        });
-        map.geoObjects.add(_editorPolyline);
-        RouteManager._setPreviewPolyline(_editorPolyline);
-
-        // Промежуточные точки — кликабельны, удаляются
-        for (var i = 1; i < _editorCoords.length - 1; i++) {
-            _addMidMarker(i);
-        }
-
-        // Крайние точки — перетаскиваемые
-        _addDragMarker(0,                         '#2ecc71');
-        _addDragMarker(_editorCoords.length - 1,   '#e74c3c');
-    }
-
     function _addMidMarker(idx) {
         var c   = _editorCoords[idx];
         var map = RouteManager.getMap();
 
+        var isSplit = (_splitPointId !== null && c[0] === _splitPointId);
+        var dotColor = isSplit ? '#9ca3af' : '#4f8ef7';
+
         var layout = ymaps.templateLayoutFactory.createClass(
-            '<div style="width:12px;height:12px;border-radius:50%;background:#4f8ef7;'
+            '<div style="width:12px;height:12px;border-radius:50%;background:' + dotColor + ';'
             + 'border:2px solid #fff;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.4);'
-            + 'position:absolute;transform:translate(-50%,-50%)" title="Нажмите чтобы удалить"></div>'
+            + 'position:absolute;transform:translate(-50%,-50%)"></div>'
         );
 
         var pm = new ymaps.Placemark([c[1], c[2]], {}, {
@@ -820,8 +816,12 @@ var RouteApproval = (function () {
         });
 
         (function (pointIdx, pointId) {
-            pm.events.add('click', function () {
-                _deletePoint(pointIdx, pointId);
+            pm.events.add('click', function (e) {
+                e.preventDefault();
+                var domEvent = e.get('domEvent');
+                var clientX = domEvent.get('clientX');
+                var clientY = domEvent.get('clientY');
+                _showPointMenu(clientX, clientY, pointIdx, pointId);
             });
         }(idx, c[0]));
 
@@ -829,19 +829,143 @@ var RouteApproval = (function () {
         _editorMarkers.push({ pm: pm, idx: idx });
     }
 
+    function _showPointMenu(x, y, idx, pointId) {
+        _closePointMenu();
+
+        var menu = document.createElement('div');
+        menu.className = 'ra-point-menu';
+        menu.style.left = (x + 14) + 'px';
+        menu.style.top  = (y - 10) + 'px';
+
+        function btn(label, cls, fn) {
+            var b = document.createElement('button');
+            if (cls) b.className = cls;
+            b.textContent = label;
+            b.onclick = function () { _closePointMenu(); fn(); };
+            menu.appendChild(b);
+        }
+
+        btn('Удалить точку', 'menu-danger', function () { _deletePoint(idx, pointId); });
+        btn('Разделить маршрут', '', function () { _splitRoute(idx, pointId); });
+        btn('Удалить начало (до этой)', '', function () { _trimStart(idx); });
+        btn('Удалить конец (с этой)', '', function () { _trimEnd(idx); });
+
+        document.body.appendChild(menu);
+        _pointMenu = menu;
+
+        // Закрыть при клике вне меню
+        setTimeout(function () {
+            document.addEventListener('click', _closePointMenu, { once: true });
+        }, 0);
+    }
+
+    function _closePointMenu() {
+        if (_pointMenu) { _pointMenu.remove(); _pointMenu = null; }
+    }
+
     function _deletePoint(idx, pointId) {
         _deletedIds.push(pointId);
+        // Если удаляем точку разделения — сбрасываем split
+        if (_splitPointId === pointId) _splitPointId = null;
         _editorCoords.splice(idx, 1);
+        _redrawEditor();
+    }
 
-        // Перерисовываем редактор
-        _clearEditor();
+    // ──────────────────────────────────────────────────────
+    // Разделить маршрут в точке idx
+    // ──────────────────────────────────────────────────────
+    function _splitRoute(idx, pointId) {
+        _splitPointId = pointId;
+        _redrawEditor();
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Удалить все точки с начала до idx (не включая idx)
+    // ──────────────────────────────────────────────────────
+    function _trimStart(idx) {
+        var removed = _editorCoords.splice(0, idx);
+        removed.forEach(function (c) { _deletedIds.push(c[0]); });
+        if (_splitPointId !== null) {
+            var stillHas = _editorCoords.find(function (c) { return c[0] === _splitPointId; });
+            if (!stillHas) _splitPointId = null;
+        }
+        _redrawEditor();
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Удалить все точки с idx+1 до конца
+    // ──────────────────────────────────────────────────────
+    function _trimEnd(idx) {
+        var removed = _editorCoords.splice(idx + 1);
+        removed.forEach(function (c) { _deletedIds.push(c[0]); });
+        if (_splitPointId !== null) {
+            var stillHas = _editorCoords.find(function (c) { return c[0] === _splitPointId; });
+            if (!stillHas) _splitPointId = null;
+        }
+        _redrawEditor();
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Сбросить редактор к исходному состоянию
+    // ──────────────────────────────────────────────────────
+    function resetEditor() {
+        _editorCoords  = _origCoords.slice();
+        _deletedIds    = [];
+        _movedPoints   = [];
+        _splitPointId  = null;
+        _removePins();
+
         var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
-        _editorPolyline = new ymaps.Polyline(latLngs, {}, {
+        _addPin(latLngs[0],                  'А', '#2ecc71', _fmtTime(_current.start));
+        _addPin(latLngs[latLngs.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
+
+        _redrawEditor();
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Перерисовать редактор (полилайн + маркеры)
+    // ──────────────────────────────────────────────────────
+    function _redrawEditor() {
+        if (!_current) return;  // маршрут мог быть сброшен пока шла анимация
+        _clearEditor();
+        var map = RouteManager.getMap();
+
+        var splitIdx = _splitPointId
+            ? _editorCoords.findIndex(function (c) { return c[0] === _splitPointId; })
+            : -1;
+
+        var part1 = _editorCoords.slice(0, splitIdx >= 0 ? splitIdx + 1 : _editorCoords.length);
+        var part2 = splitIdx >= 0 ? _editorCoords.slice(splitIdx) : [];
+
+        var ll1 = part1.map(function (c) { return [c[1], c[2]]; });
+        var ll2 = part2.map(function (c) { return [c[1], c[2]]; });
+
+        // Основной полилайн
+        _editorPolyline = new ymaps.Polyline(ll1, {}, {
             strokeColor: '#4f8ef7', strokeWidth: 5, strokeOpacity: 0.85
         });
-        RouteManager.getMap().geoObjects.add(_editorPolyline);
+        map.geoObjects.add(_editorPolyline);
         RouteManager._setPreviewPolyline(_editorPolyline);
 
+        // Серая часть после разделения
+        if (ll2.length > 1) {
+            _editorPolyline2 = new ymaps.Polyline(ll2, {}, {
+                strokeColor: '#6b7280', strokeWidth: 5, strokeOpacity: 0.6
+            });
+            map.geoObjects.add(_editorPolyline2);
+        }
+
+        // Переносим пин Б в точку разделения
+        _removePins();
+        var allLL = _editorCoords.map(function (c) { return [c[1], c[2]]; });
+        _addPin(allLL[0], 'А', '#2ecc71', _fmtTime(_current.start));
+        if (splitIdx >= 0) {
+            _addPin(ll1[ll1.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
+        } else {
+            _addPin(allLL[allLL.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
+        }
+
+        // Маркеры промежуточных точек
         for (var i = 1; i < _editorCoords.length - 1; i++) _addMidMarker(i);
         _addDragMarker(0,                          '#2ecc71');
         _addDragMarker(_editorCoords.length - 1,    '#e74c3c');
@@ -895,7 +1019,8 @@ var RouteApproval = (function () {
         _editorMarkers = [];
         _dragMarkers.forEach(function (m) { map.geoObjects.remove(m); });
         _dragMarkers = [];
-        if (_editorPolyline) { map.geoObjects.remove(_editorPolyline); _editorPolyline = null; }
+        if (_editorPolyline)  { map.geoObjects.remove(_editorPolyline);  _editorPolyline  = null; }
+        if (_editorPolyline2) { map.geoObjects.remove(_editorPolyline2); _editorPolyline2 = null; }
     }
 
     // ──────────────────────────────────────────────────────
@@ -1004,6 +1129,17 @@ var RouteApproval = (function () {
     }
 
     // ──────────────────────────────────────────────────────
+    // Удалить маршрут
+    // ──────────────────────────────────────────────────────
+    function deleteRoute() {
+        if (!_current) return;
+        var id = _current.id;
+        fetch('/Home/DeleteRoute?id=' + id, { method: 'GET' })
+            .then(function () { _goNext(); })
+            .catch(function (e) { console.error('DeleteRoute:', e); });
+    }
+
+    // ──────────────────────────────────────────────────────
     // Сохранить маршрут
     // ──────────────────────────────────────────────────────
     function approve() {
@@ -1013,7 +1149,8 @@ var RouteApproval = (function () {
             origin:         document.getElementById('ra-origin').value,
             destination:    document.getElementById('ra-destination').value,
             deletedPointIds: _deletedIds,
-            movedPoints:    _movedPoints
+            movedPoints:    _movedPoints,
+            splitPointId: _splitPointId ?? ""
         };
         fetch('/Home/AproveRoute', {
             method:  'POST',
@@ -1029,9 +1166,10 @@ var RouteApproval = (function () {
     // ──────────────────────────────────────────────────────
     function skip() {
         var nextIdx = _currentIdx + 1;
+        _restoreDay();
+        _current = null;
         if (nextIdx < _allIds.length) {
-            _current = null;
-            _fetchRoute(_allIds[nextIdx]);
+            _fetchRoute(_allIds[nextIdx], function () { openModal(_current.id); });
         } else {
             _closePanel();
         }
@@ -1041,11 +1179,11 @@ var RouteApproval = (function () {
     // После сохранения — следующий маршрут
     // ──────────────────────────────────────────────────────
     function _goNext() {
-        _allIds.splice(_currentIdx, 1); // убираем сохранённый из списка
+        _allIds.splice(_currentIdx, 1);
+        _current = null;
         if (_allIds.length > 0) {
             var nextId = _allIds[Math.min(_currentIdx, _allIds.length - 1)];
-            _current   = null;
-            _fetchRoute(nextId);
+            _fetchRoute(nextId, function () { openModal(_current.id); });
         } else {
             _closePanel();
         }

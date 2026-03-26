@@ -7,7 +7,7 @@ using NHibernate;
 using ISession = NHibernate.ISession;
 namespace HA_DailyRoutes.Repositories
 {
-    public class GpsRouteRepository : PGRepository<GpsRoute>
+    public class GpsRouteRepository : PGDeletableRepository<GpsRoute>
     {
         public override bool Delete(GpsRoute route)
         {

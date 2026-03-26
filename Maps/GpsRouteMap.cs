@@ -11,9 +11,11 @@ namespace HA_DailyRoutes.Maps
             Map(x => x.Origin);
             Map(x => x.Destination);
             Map(x => x.IsAproved);
+            Map(x => x.IsDeleted);
+            Map(x => x.DeletedStamp);
             HasMany(x => x.GpsPoints)
                 .Cascade.None()
-                .LazyLoad();
+                .Not.LazyLoad();
             References(x => x.AsOriginPoint)
                 .Not.LazyLoad();
         }

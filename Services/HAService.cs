@@ -4,7 +4,6 @@ using HA_DailyRoutes.APIs;
 using HA_DailyRoutes.Entities;
 using HA_DailyRoutes.Models.DTOs;
 using HA_DailyRoutes.Models.DTOs.HomeAssistant;
-using HA_DailyRoutes.Services;
 
 using NHibernate.Util;
 
@@ -41,14 +40,12 @@ public class HAService
 
         //Создание маршрутов
         FilterNearPoints(gpsHistoryItems);
-        //gpsRouteDS.GetAll().ToList().ForEach(x => gpsRouteDS.Delete(x));
         var newGpsRoutes = BuildGpsRoutes(gpsHistoryItems);
         newGpsRoutes.Where(x => x.GpsPoints.All(y => y.GpsRoute == null))
             .ToList()
             .ForEach(x => gpsRouteDS.Save(x));
 
         IEnumerable<GpsRoute> routes = gpsRoutes.Concat(newGpsRoutes);
-        //SuggestRouteLocations(Zones, routes);
 
         return ConvertRoutesToDTO(routes);
     }
@@ -203,36 +200,9 @@ public class HAService
         Date = route.Start.ToString("yyyy-MM-dd"),
         Name = $"{route.Start:t} {route.Origin} -> {route.End:t} {route.Destination}",
         Color = $"#{new Random(index).Next(0x1000000):X6}",
-        Coordinates = route.GetRoutePoints()
+        Coordinates = route.AllPoints
+            .OrderBy(x => x.GpsStamp)
             .Select(p => new List<double> { p.Latitude, p.Longitude })
             .ToList()
     }).ToList();
-
-    public object AproveRoute(Guid id, string origin, string destination, List<Guid> deletedPointIds, List<MovedPointDTO> movedPoints)
-    {
-        var route = gpsRouteDS.Get(id);
-        if (route is null || route.IsAproved)
-            return false;
-
-        foreach (var pointId in deletedPointIds)
-        {
-            GpsHistory point = gpsHistoryDS.Get(pointId);
-            point.GpsRoute = null;
-            gpsHistoryDS.Save(point);
-        }
-
-        foreach (var movedPoint in movedPoints)
-        {
-            GpsHistory point = gpsHistoryDS.Get(movedPoint.Id);
-            point.Latitude = movedPoint.Lat;
-            point.Longitude = movedPoint.Lng;
-            gpsHistoryDS.Save(point);
-        }
-
-        route.Origin = origin;
-        route.Destination = destination;
-        route.IsAproved = true;
-        gpsRouteDS.Save(route);
-        return true;
-    }
 }

@@ -12,6 +12,7 @@ namespace HA_DailyRoutes.Services
     public class GuessZoneService
     {
         private readonly IDomainService<GpsRoute> gpsRouteDS;
+        private readonly IDomainService<GpsHistory> gpsHistoryDS;
         private readonly IDomainService<Zone> zoneDS;
         private readonly IHomeAssistantApi haApi;
 
@@ -46,11 +47,12 @@ namespace HA_DailyRoutes.Services
             }
         }
 
-        public GuessZoneService(IDomainService<GpsRoute> gpsRouteDS, IHomeAssistantApi haApi, IDomainService<Zone> zoneDS)
+        public GuessZoneService(IDomainService<GpsRoute> gpsRouteDS, IHomeAssistantApi haApi, IDomainService<Zone> zoneDS, IDomainService<GpsHistory> gpsHistoryDS)
         {
             this.gpsRouteDS = gpsRouteDS;
             this.haApi = haApi;
             this.zoneDS = zoneDS;
+            this.gpsHistoryDS = gpsHistoryDS;
         }
 
         public object GetNewRoutes()
@@ -70,7 +72,7 @@ namespace HA_DailyRoutes.Services
                     Destination = x.SuggestedDestination == null ? x.Destination : "",
                     SuggestedOrigin = x.SuggestedOrigin,
                     SuggestedDestination = x.SuggestedDestination,
-                    Coordinates = x.GetRoutePoints()
+                    Coordinates = x.AllPoints
                         .Select(p => new List<double> { p.Latitude, p.Longitude })
                         .ToList()
                 };
@@ -99,12 +101,85 @@ namespace HA_DailyRoutes.Services
                     Destination = route.SuggestedDestination == null ? route.Destination : "",
                     SuggestedOrigin = route.SuggestedOrigin,
                     SuggestedDestination = route.SuggestedDestination,
-                    Coordinates = route.GetRoutePoints()
+                    Coordinates = route.AllPoints
                         .Select(p => new object[]{ p.Id, p.Latitude, p.Longitude })
                         .ToList(),
                 },
                 AllIds = gpsRoutes.Select(x => x.Id).ToList(),
             };
+        }
+
+        public object AproveRoute(Guid id, string origin, string destination, Guid splitPointId, List<Guid> deletedPointIds, List<MovedPointDTO> movedPoints)
+        {
+            var route = gpsRouteDS.Get(id);
+            var routePoints = route.GpsPoints.OrderBy(x => x.GpsStamp).ToArray();
+            if (route is null || route.IsAproved)
+                return false;
+
+            foreach (var pointId in deletedPointIds)
+            {
+                GpsHistory point = gpsHistoryDS.Get(pointId);
+                point.GpsRoute = null;
+                gpsHistoryDS.Save(point);
+            }
+
+            foreach (var movedPoint in movedPoints)
+            {
+                GpsHistory point = gpsHistoryDS.Get(movedPoint.Id);
+                point.Latitude = movedPoint.Lat;
+                point.Longitude = movedPoint.Lng;
+                gpsHistoryDS.Save(point);
+            }
+
+            if (splitPointId != default)
+            {
+                var newRoute = gpsRouteDS.Save(new GpsRoute());
+                bool startDelete = false;
+                foreach (var point in routePoints)
+                {
+                    if (point.Id == splitPointId)
+                    {
+                        startDelete = true;
+                        newRoute.AsOriginPoint = point;
+                        continue;
+                    }
+                    if (startDelete)
+                    {
+                        point.GpsRoute = newRoute;
+                        newRoute.GpsPoints.Add(point);
+                    }
+                }
+                newRoute.Start = newRoute.GpsPoints.First().GpsStamp;
+                newRoute.End = newRoute.GpsPoints.Last().GpsStamp;
+                newRoute.Origin = destination;
+                gpsRouteDS.Save(newRoute);
+                route.End = newRoute.Start;
+            }
+
+            route.Origin = origin;
+            route.Destination = destination;
+            route.IsAproved = true;
+            gpsRouteDS.Save(route);
+            return true;
+        }
+
+        public object? DeleteRoute(Guid id)
+        {
+            return gpsRouteDS.Delete(id);
+        }
+
+        public object GetZonesPoints()
+        {
+            return ZoneWithGpsHistoryDTOs
+                .SelectMany(p => p.HistoryPoints
+                    .Select(x => new
+                    {
+                        lat = x.Latitude,
+                        lng = x.Longitude,
+                        weight = Math.Round(1.0 - (x.GetRadius() - 1.0) / 99.0, 3)
+                    })
+                    .Where(x => x.weight > 0)
+                );
         }
 
         private void GuessRoutes(IEnumerable<GpsRoute> routes)
@@ -114,12 +189,12 @@ namespace HA_DailyRoutes.Services
                 if (item.Origin == "home")
                     item.SuggestedOrigin = "Дом";
                 else
-                    item.SuggestedOrigin = GuessZone(item.GetRoutePoints().First())?.Name;
+                    item.SuggestedOrigin = GuessZone(item.AllPoints.First())?.Name;
 
                 if (item.Destination == "home")
                     item.SuggestedDestination = "Дом";
                 else
-                    item.SuggestedDestination = GuessZone(item.GetRoutePoints().Last())?.Name;
+                    item.SuggestedDestination = GuessZone(item.AllPoints.Last())?.Name;
             }
         }
 
@@ -219,20 +294,6 @@ namespace HA_DailyRoutes.Services
                 .GroupBy(x => x.Name == "Home Assistant" ? "Дом" : x.Name)
                 .Select(x => new ZoneWithGpsHistoryDTO(x.ToArray()))
                 .ToArray();
-        }
-
-        public object GetZonesPoints()
-        {
-            return ZoneWithGpsHistoryDTOs
-                .SelectMany(p => p.HistoryPoints
-                    .Select(x => new
-                    {
-                        lat = x.Latitude,
-                        lng = x.Longitude,
-                        weight = Math.Round(1.0 - (x.GetRadius() - 1.0) / 99.0, 3)
-                    })
-                    .Where(x => x.weight > 0)
-                );
         }
     }
 }

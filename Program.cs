@@ -1,5 +1,8 @@
+using Antlr.Runtime;
+
 using DDDHibernate.DI;
 using DDDHibernate.DomainServices.DomainStructure;
+using DDDHibernate.Repositories.Implementations;
 using DDDHibernate.Repositories.RepositoryStructure;
 using DDDHibernate.Xtensions;
 
@@ -34,7 +37,8 @@ internal class Program
         builder.Services.AddSingleton(typeof(HAService));
         builder.Services.AddSingleton(typeof(GuessZoneService));
         builder.Services.AddSingleton(typeof(IHomeAssistantApi), typeof(HomeAssistantApi));
-        builder.Services.AddSingleton(typeof(IRepository<GpsRoute>), typeof(GpsRouteRepository));
+        builder.Services.AddSingleton(typeof(IRepository<GpsRoute>), typeof(PGDeletableRepository<GpsRoute>));
+        builder.Services.AddKeyedSingleton(typeof(IRepository<GpsRoute>), "ServiceDelete", typeof(GpsRouteRepository));
 
         builder.Services.AddHttpClient("HA", client =>
         {
@@ -86,5 +90,15 @@ internal class Program
                 TimeStamp = x.End,
             }
         });
+//        var ServiceDeleteGpsRoute = Container.GetRepository<GpsRoute>("ServiceDelete");
+//        var guids = @"52a9751f-4e6c-4822-b8bb-78984a0f9eb1
+//64718bc1-505f-4d9d-bfce-b38aa72e5b53
+//61c7897b-3909-45b7-807f-98c047c97afe
+//6c05e73d-c0da-4c73-b60b-672aee105ede
+//107dc9bc-f62d-4acb-8f18-c85670cdcabb".Split("\r\n");
+//        foreach (var item in guids)
+//        {
+//            ServiceDeleteGpsRoute.Delete(Guid.Parse(item));
+//        }
     }
 }

@@ -1,10 +1,8 @@
 ﻿using DDDHibernate.Models.Entities;
 
-using System.Security.Policy;
-
 namespace HA_DailyRoutes.Entities
 {
-    public class GpsRoute : NamedEntity
+    public class GpsRoute : NamedEntity, IDeletableEntity
     {
         public virtual string Origin { get; set; }
 
@@ -50,7 +48,10 @@ namespace HA_DailyRoutes.Entities
             }
         }
 
-        public virtual IEnumerable<GpsHistory> GetRoutePoints()
+        public virtual DateTime DeletedStamp { get; set; }
+        public virtual bool IsDeleted { get; set; }
+
+        private IEnumerable<GpsHistory> GetRoutePoints()
         {
             return AsOriginPoint != null
                 ? GpsPoints.Prepend(AsOriginPoint).OrderBy(x => x.GpsStamp)
