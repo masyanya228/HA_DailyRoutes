@@ -568,16 +568,17 @@ var RouteApproval = (function () {
     var _currentIdx  = -1;   // индекс текущего в _allIds
 
     // Редактор маршрута
-    var _deletedIds    = [];
-    var _movedPoints   = [];
-    var _splitPointId  = null;
-    var _origCoords    = []; // исходные координаты для сброса
-    var _editorMarkers = [];
-    var _dragMarkers   = [];
-    var _editorPolyline  = null;
-    var _editorPolyline2 = null; // серая часть после разделения
-    var _editorCoords  = []; // [[id, lat, lng], ...]
-    var _pointMenu     = null; // текущее открытое контекстное меню
+    var _deletedIds         = [];
+    var _movedPoints        = [];
+    var _splitPoints        = [];   // [{pointId}] — точки разделения (по порядку)
+    var _suggestedSplitIds  = [];   // [suggestRouteSplitId] — принятые предложения
+    var _suggestSplits      = [];   // данные suggestSplits из сервера
+    var _origCoords         = [];
+    var _editorMarkers      = [];
+    var _dragMarkers        = [];
+    var _editorPolylines    = [];   // полилайны сегментов (по одному на отрезок)
+    var _editorCoords       = [];   // [[id, lat, lng], ...]
+    var _pointMenu          = null;
 
     // ──────────────────────────────────────────────────────
     // Запуск
@@ -778,11 +779,13 @@ var RouteApproval = (function () {
         }
 
         // Инициализируем состояние редактора
-        _editorCoords  = route.coordinates.slice();
-        _origCoords    = route.coordinates.map(function (c) { return c.slice(); });
-        _deletedIds    = [];
-        _movedPoints   = [];
-        _splitPointId  = null;
+        _editorCoords        = route.coordinates.slice();
+        _origCoords          = route.coordinates.map(function (c) { return c.slice(); });
+        _deletedIds          = [];
+        _movedPoints         = [];
+        _splitPoints         = [];
+        _suggestedSplitIds   = [];
+        _suggestSplits       = route.suggestSplits || [];
 
         var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
 
@@ -798,39 +801,55 @@ var RouteApproval = (function () {
     // ──────────────────────────────────────────────────────
     // Редактор маршрута
     // ──────────────────────────────────────────────────────
+    // Цвет сегмента по его номеру
+    var _SEG_COLORS = ['#4f8ef7','#f59e0b','#2ecc71','#a855f7','#ef4444','#06b6d4','#ec4899'];
+    function _segColor(n) { return _SEG_COLORS[n % _SEG_COLORS.length]; }
+
     function _addMidMarker(idx) {
-        var c   = _editorCoords[idx];
-        var map = RouteManager.getMap();
+        var c      = _editorCoords[idx];
+        var map    = RouteManager.getMap();
+        var pid    = c[0];
 
-        var isSplit = (_splitPointId !== null && c[0] === _splitPointId);
-        var dotColor = isSplit ? '#9ca3af' : '#4f8ef7';
+        var isSplit   = _splitPoints.some(function (s) { return s.pointId === pid; });
+        var suggest   = _suggestSplits.find(function (s) { return s.splitPointId === pid; });
+        var isSuggest = !!suggest && !isSplit;
 
-        var layout = ymaps.templateLayoutFactory.createClass(
-            '<div style="width:12px;height:12px;border-radius:50%;background:' + dotColor + ';'
-            + 'border:2px solid #fff;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.4);'
-            + 'position:absolute;transform:translate(-50%,-50%)"></div>'
-        );
+        var dotColor = isSuggest ? '#f59e0b' : (isSplit ? '#9ca3af' : '#4f8ef7');
+        var dotSize  = (isSuggest || isSplit) ? '14px' : '12px';
+
+        var inner = isSuggest
+            ? '<div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);text-align:center;white-space:nowrap">'
+              + '<div style="background:#f59e0b;color:#fff;font-size:12px;font-weight:700;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.45);margin:0 auto">?</div>'
+              + '<div style="font-size:10px;font-weight:600;color:#fff;background:rgba(0,0,0,0.6);border-radius:3px;padding:1px 5px;margin-top:3px;display:inline-block">'
+              + _fmtTime(suggest.prevEnd) + ' – ' + _fmtTime(suggest.nextStart)
+              + '</div></div>'
+            : '<div style="width:' + dotSize + ';height:' + dotSize + ';border-radius:50%;background:' + dotColor + ';'
+              + 'border:2px solid #fff;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.4);'
+              + 'position:absolute;transform:translate(-50%,-50%)"></div>';
+
+        var layout = ymaps.templateLayoutFactory.createClass(inner);
+        var shapeR = isSuggest ? 14 : 10;
 
         var pm = new ymaps.Placemark([c[1], c[2]], {}, {
             iconLayout: layout,
-            iconShape:  { type: 'Circle', coordinates: [0, 0], radius: 10 }
+            iconShape:  isSuggest
+                ? { type: 'Rectangle', coordinates: [[-14, -44], [14, 0]] }
+                : { type: 'Circle', coordinates: [0, 0], radius: shapeR }
         });
 
-        (function (pointIdx, pointId) {
+        (function (pointIdx, pointId, sg) {
             pm.events.add('click', function (e) {
                 e.preventDefault();
                 var domEvent = e.get('domEvent');
-                var clientX = domEvent.get('clientX');
-                var clientY = domEvent.get('clientY');
-                _showPointMenu(clientX, clientY, pointIdx, pointId);
+                _showPointMenu(domEvent.get('clientX'), domEvent.get('clientY'), pointIdx, pointId, sg);
             });
-        }(idx, c[0]));
+        }(idx, pid, suggest));
 
         map.geoObjects.add(pm);
         _editorMarkers.push({ pm: pm, idx: idx });
     }
 
-    function _showPointMenu(x, y, idx, pointId) {
+    function _showPointMenu(x, y, idx, pointId, suggest) {
         _closePointMenu();
 
         var menu = document.createElement('div');
@@ -847,14 +866,16 @@ var RouteApproval = (function () {
         }
 
         btn('Удалить точку', 'menu-danger', function () { _deletePoint(idx, pointId); });
-        btn('Разделить маршрут', '', function () { _splitRoute(idx, pointId); });
+        // Разделить: предложенная точка → передаём suggestId, обычная → только pointId
+        btn('Разделить маршрут', '', function () {
+            _splitRoute(idx, pointId, suggest ? suggest.suggestRouteSplitId : null);
+        });
         btn('Удалить начало (до этой)', '', function () { _trimStart(idx); });
         btn('Удалить конец (с этой)', '', function () { _trimEnd(idx); });
 
         document.body.appendChild(menu);
         _pointMenu = menu;
 
-        // Закрыть при клике вне меню
         setTimeout(function () {
             document.addEventListener('click', _closePointMenu, { once: true });
         }, 0);
@@ -866,17 +887,29 @@ var RouteApproval = (function () {
 
     function _deletePoint(idx, pointId) {
         _deletedIds.push(pointId);
-        // Если удаляем точку разделения — сбрасываем split
-        if (_splitPointId === pointId) _splitPointId = null;
+        _splitPoints       = _splitPoints.filter(function (s) { return s.pointId !== pointId; });
+        _suggestedSplitIds = _suggestedSplitIds.filter(function (id) {
+            var sg = _suggestSplits.find(function (s) { return s.suggestRouteSplitId === id; });
+            return sg ? sg.splitPointId !== pointId : true;
+        });
         _editorCoords.splice(idx, 1);
         _redrawEditor();
     }
 
     // ──────────────────────────────────────────────────────
-    // Разделить маршрут в точке idx
+    // Разделить маршрут в точке idx (suggestId — если через предложение)
     // ──────────────────────────────────────────────────────
-    function _splitRoute(idx, pointId) {
-        _splitPointId = pointId;
+    function _splitRoute(idx, pointId, suggestId) {
+        var already = _splitPoints.some(function (s) { return s.pointId === pointId; });
+        if (already) return; // уже разделено в этой точке
+        _splitPoints.push({ pointId: pointId });
+        if (suggestId) _suggestedSplitIds.push(suggestId);
+        // Сортируем по порядку в маршруте
+        _splitPoints.sort(function (a, b) {
+            var ia = _editorCoords.findIndex(function (c) { return c[0] === a.pointId; });
+            var ib = _editorCoords.findIndex(function (c) { return c[0] === b.pointId; });
+            return ia - ib;
+        });
         _redrawEditor();
     }
 
@@ -886,10 +919,9 @@ var RouteApproval = (function () {
     function _trimStart(idx) {
         var removed = _editorCoords.splice(0, idx);
         removed.forEach(function (c) { _deletedIds.push(c[0]); });
-        if (_splitPointId !== null) {
-            var stillHas = _editorCoords.find(function (c) { return c[0] === _splitPointId; });
-            if (!stillHas) _splitPointId = null;
-        }
+        _splitPoints = _splitPoints.filter(function (s) {
+            return _editorCoords.some(function (c) { return c[0] === s.pointId; });
+        });
         _redrawEditor();
     }
 
@@ -899,10 +931,9 @@ var RouteApproval = (function () {
     function _trimEnd(idx) {
         var removed = _editorCoords.splice(idx + 1);
         removed.forEach(function (c) { _deletedIds.push(c[0]); });
-        if (_splitPointId !== null) {
-            var stillHas = _editorCoords.find(function (c) { return c[0] === _splitPointId; });
-            if (!stillHas) _splitPointId = null;
-        }
+        _splitPoints = _splitPoints.filter(function (s) {
+            return _editorCoords.some(function (c) { return c[0] === s.pointId; });
+        });
         _redrawEditor();
     }
 
@@ -910,61 +941,62 @@ var RouteApproval = (function () {
     // Сбросить редактор к исходному состоянию
     // ──────────────────────────────────────────────────────
     function resetEditor() {
-        // Глубокое копирование — чтобы вернуть и крайние точки
-        _editorCoords = _origCoords.map(function (c) { return c.slice(); });
-        _deletedIds   = [];
-        _movedPoints  = [];
-        _splitPointId = null;
-        _redrawEditor(); // _redrawEditor сам поставит пины
+        _editorCoords      = _origCoords.map(function (c) { return c.slice(); });
+        _deletedIds        = [];
+        _movedPoints       = [];
+        _splitPoints       = [];
+        _suggestedSplitIds = [];
+        _redrawEditor();
     }
 
     // ──────────────────────────────────────────────────────
     // Перерисовать редактор (полилайн + маркеры)
     // ──────────────────────────────────────────────────────
     function _redrawEditor() {
-        if (!_current) return;  // маршрут мог быть сброшен пока шла анимация
+        if (!_current) return;
         _clearEditor();
         var map = RouteManager.getMap();
 
-        var splitIdx = _splitPointId
-            ? _editorCoords.findIndex(function (c) { return c[0] === _splitPointId; })
-            : -1;
+        // Строим индексы точек разделения (в порядке маршрута)
+        var splitIdxs = _splitPoints.map(function (s) {
+            return _editorCoords.findIndex(function (c) { return c[0] === s.pointId; });
+        }).filter(function (i) { return i > 0; });
 
-        var part1 = _editorCoords.slice(0, splitIdx >= 0 ? splitIdx + 1 : _editorCoords.length);
-        var part2 = splitIdx >= 0 ? _editorCoords.slice(splitIdx) : [];
-
-        var ll1 = part1.map(function (c) { return [c[1], c[2]]; });
-        var ll2 = part2.map(function (c) { return [c[1], c[2]]; });
-
-        // Основной полилайн
-        _editorPolyline = new ymaps.Polyline(ll1, {}, {
-            strokeColor: '#4f8ef7', strokeWidth: 5, strokeOpacity: 0.85
-        });
-        map.geoObjects.add(_editorPolyline);
-        RouteManager._setPreviewPolyline(_editorPolyline);
-
-        // Серая часть после разделения
-        if (ll2.length > 1) {
-            _editorPolyline2 = new ymaps.Polyline(ll2, {}, {
-                strokeColor: '#6b7280', strokeWidth: 5, strokeOpacity: 0.6
-            });
-            map.geoObjects.add(_editorPolyline2);
+        // Разбиваем маршрут на сегменты
+        var boundaries = [0].concat(splitIdxs).concat([_editorCoords.length - 1]);
+        var segments = [];
+        for (var si = 0; si < boundaries.length - 1; si++) {
+            segments.push(_editorCoords.slice(boundaries[si], boundaries[si + 1] + 1));
         }
 
-        // Переносим пин Б в точку разделения
+        // Рисуем полилайны сегментов
+        segments.forEach(function (seg, si) {
+            var ll = seg.map(function (c) { return [c[1], c[2]]; });
+            var pl = new ymaps.Polyline(ll, {}, {
+                strokeColor:   _segColor(si),
+                strokeWidth:   5,
+                strokeOpacity: 0.85
+            });
+            map.geoObjects.add(pl);
+            _editorPolylines.push(pl);
+            if (si === 0) RouteManager._setPreviewPolyline(pl);
+        });
+
+        // Пины: А, промежуточные номера (1,2,...), Б
         _removePins();
         var allLL = _editorCoords.map(function (c) { return [c[1], c[2]]; });
         _addPin(allLL[0], 'А', '#2ecc71', _fmtTime(_current.start));
-        if (splitIdx >= 0) {
-            _addPin(ll1[ll1.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
-        } else {
-            _addPin(allLL[allLL.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
-        }
 
-        // Маркеры промежуточных точек
+        splitIdxs.forEach(function (sIdx, n) {
+            _addPin(allLL[sIdx], String(n + 1), _segColor(n), null);
+        });
+
+        _addPin(allLL[allLL.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
+
+        // Маркеры точек
         for (var i = 1; i < _editorCoords.length - 1; i++) _addMidMarker(i);
-        _addDragMarker(0,                          '#2ecc71');
-        _addDragMarker(_editorCoords.length - 1,    '#e74c3c');
+        _addDragMarker(0,                         '#2ecc71');
+        _addDragMarker(_editorCoords.length - 1,   '#e74c3c');
     }
 
     function _addDragMarker(idx, color) {
@@ -1015,8 +1047,8 @@ var RouteApproval = (function () {
         _editorMarkers = [];
         _dragMarkers.forEach(function (m) { map.geoObjects.remove(m); });
         _dragMarkers = [];
-        if (_editorPolyline)  { map.geoObjects.remove(_editorPolyline);  _editorPolyline  = null; }
-        if (_editorPolyline2) { map.geoObjects.remove(_editorPolyline2); _editorPolyline2 = null; }
+        _editorPolylines.forEach(function (pl) { map.geoObjects.remove(pl); });
+        _editorPolylines = [];
     }
 
     // ──────────────────────────────────────────────────────
@@ -1144,9 +1176,10 @@ var RouteApproval = (function () {
             id:             _current.id,
             origin:         document.getElementById('ra-origin').value,
             destination:    document.getElementById('ra-destination').value,
-            deletedPointIds: _deletedIds,
-            movedPoints:    _movedPoints,
-            splitPointId: _splitPointId ?? ""
+            deletedPointIds:     _deletedIds,
+            movedPoints:         _movedPoints,
+            splitPoints:         _splitPoints.map(function (s) { return s.pointId; }),
+            suggestedSplitPoints: _suggestedSplitIds
         };
         fetch('/Home/AproveRoute', {
             method:  'POST',

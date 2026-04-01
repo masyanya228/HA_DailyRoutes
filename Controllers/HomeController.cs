@@ -68,8 +68,14 @@ namespace HA_DailyRoutes.Controllers
             var id = body.GetProperty("id").GetGuid();
             var origin = body.GetProperty("origin").GetString();
             var destination = body.GetProperty("destination").GetString();
-            if (!body.GetProperty("splitPointId").TryGetGuid(out Guid splitPointId))
-                splitPointId = Guid.Empty;
+            var splitPoints = body.GetProperty("splitPoints")
+                .EnumerateArray()
+                .Select(x => x.GetGuid())
+                .ToList();
+            var suggestedSplitPoints = body.GetProperty("suggestedSplitPoints")
+                .EnumerateArray()
+                .Select(x => x.GetGuid())
+                .ToList();
             var deletedPointIds = body.GetProperty("deletedPointIds")
                 .EnumerateArray()
                 .Select(x => x.GetGuid())
@@ -84,7 +90,7 @@ namespace HA_DailyRoutes.Controllers
                     Lng = x.GetProperty("lng").GetDouble()
                 })
                 .ToList();
-            return Json(GuessZoneService.AproveRoute(id, origin, destination, splitPointId, deletedPointIds, movedPoints));
+            return Json(GuessZoneService.AproveRoute(id, origin, destination, deletedPointIds, movedPoints, splitPoints, suggestedSplitPoints));
         }
 
         /// <summary>

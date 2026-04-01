@@ -205,3 +205,5 @@
         add constraint FK_3BE0C537 
         foreign key (Route_id) 
         references GpsRoutes
+    alter table SuggestRouteSplits 
+        add column IsAproved boolean

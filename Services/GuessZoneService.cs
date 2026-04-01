@@ -12,6 +12,7 @@ namespace HA_DailyRoutes.Services
         private readonly IDomainService<GpsRoute> gpsRouteDS;
         private readonly IDomainService<GpsHistory> gpsHistoryDS;
         private readonly IDomainService<EngineHistory> engineHistoryDS;
+        private readonly IDomainService<SuggestRouteSplit> suggestRouteSplitDS;
         private readonly IDomainService<Zone> zoneDS;
         private readonly IHomeAssistantApi haApi;
         private readonly ICalendar calendar;
@@ -48,7 +49,7 @@ namespace HA_DailyRoutes.Services
             }
         }
 
-        public GuessZoneService(IDomainService<GpsRoute> gpsRouteDS, IHomeAssistantApi haApi, IDomainService<Zone> zoneDS, IDomainService<GpsHistory> gpsHistoryDS, ICalendar calendar, IDomainService<EngineHistory> engineHistoryDS, EngineService engineService)
+        public GuessZoneService(IDomainService<GpsRoute> gpsRouteDS, IHomeAssistantApi haApi, IDomainService<Zone> zoneDS, IDomainService<GpsHistory> gpsHistoryDS, ICalendar calendar, IDomainService<EngineHistory> engineHistoryDS, EngineService engineService, IDomainService<SuggestRouteSplit> suggestRouteSplitDS)
         {
             this.gpsRouteDS = gpsRouteDS;
             this.haApi = haApi;
@@ -57,6 +58,7 @@ namespace HA_DailyRoutes.Services
             this.calendar = calendar;
             this.engineHistoryDS = engineHistoryDS;
             this.engineService = engineService;
+            this.suggestRouteSplitDS = suggestRouteSplitDS;
         }
 
         [Obsolete($"Используйте метод {nameof(GetNextRoute)}", true)]
@@ -97,7 +99,7 @@ namespace HA_DailyRoutes.Services
                 : gpsRoutes.FirstOrDefault(x => x.Id == id);
             if (route is null)
                 return null;
-            SupplementWithEngineData(route);
+            var suggestSplits = SupplementWithEngineData(route);
             GuessRoute(route);
             return new
             {
@@ -115,7 +117,7 @@ namespace HA_DailyRoutes.Services
                     Coordinates = route.AllPoints
                         .Select(p => new object[] { p.Id, p.Latitude, p.Longitude })
                         .ToList(),
-                    SuggestSplits = "new [0]"
+                    SuggestSplits = suggestSplits.Select(s => new { SuggestRouteSplitId=s.Id, SplitPointId = s.SplitePoint.Id, s.PrevEnd, s.NextStart })
                 },
                 AllIds = gpsRoutes.Select(x => x.Id).ToList(),
             };
@@ -154,7 +156,7 @@ namespace HA_DailyRoutes.Services
                     Console.WriteLine($"Split:\r\n{split.PrevEnd:g}-{split.NextStart:g} {split.SplitePoint.State} {split.SplitePoint.GpsStamp:g} ({split.MidStamp:g})");
                 }
             }
-            return null;
+            return splits;
         }
 
         private SuggestRouteStartEnd SuggestStartEnd(GpsRoute route, EngineRouteDTO engineRoute)
@@ -171,6 +173,7 @@ namespace HA_DailyRoutes.Services
 
         private IEnumerable<SuggestRouteSplit> SuggestSplits(GpsRoute route, EngineRouteDTO engineRoute)
         {
+            var oldSuggests = suggestRouteSplitDS.GetAll().Where(x => x.Route.Id == route.Id).ToArray();
             var routeSplits = new List<SuggestRouteSplit>();
             var curRouteSplit = new SuggestRouteSplit();
             var midPoints = engineRoute.EngineHistories.ToArray()[1..^1];
@@ -185,14 +188,15 @@ namespace HA_DailyRoutes.Services
                         .Where(x => x.GpsStamp.Between(curRouteSplit.PrevEnd, curRouteSplit.NextStart))
                         .OrderBy(x => Math.Abs((x.GpsStamp - curRouteSplit.MidStamp).TotalMinutes))
                         .FirstOrDefault()!;
+                    curRouteSplit.Route = route;
 
-                    if (curRouteSplit.IsCompleted)
+                    if (curRouteSplit.IsCompleted && !oldSuggests.Any(x => x.SplitePoint == curRouteSplit.SplitePoint))
                         routeSplits.Add(curRouteSplit);
                     else
                         curRouteSplit = new SuggestRouteSplit();
                 }
             }
-            return routeSplits;
+            return oldSuggests.Concat(routeSplits.Select(suggestRouteSplitDS.Save));
         }
 
         /// <summary>
@@ -201,17 +205,19 @@ namespace HA_DailyRoutes.Services
         /// <param name="id"></param>
         /// <param name="origin"></param>
         /// <param name="destination"></param>
-        /// <param name="splitPointId"></param>
         /// <param name="deletedPointIds"></param>
         /// <param name="movedPoints"></param>
+        /// <param name="splitPoints">Точки разделения. Включает в себя GpsHistory из suggestedSplitPoints.</param>
+        /// <param name="suggestedSplitPoints">Точки разделения предложенные системой</param>
         /// <returns></returns>
-        public object AproveRoute(Guid id, string origin, string destination, Guid splitPointId, List<Guid> deletedPointIds, List<MovedPointDTO> movedPoints)
+        public object AproveRoute(Guid id, string origin, string destination, List<Guid> deletedPointIds, List<MovedPointDTO> movedPoints, IList<Guid> splitPoints, IEnumerable<Guid> suggestedSplitPoints)
         {
+            Guid? nextRouteToAprove = null;
             var route = gpsRouteDS.Get(id);
-            var routePoints = route.GpsPoints.OrderBy(x => x.GpsStamp).ToArray();
             if (route is null || route.IsAproved)
                 return false;
 
+            var routePoints = route.GpsPoints.OrderBy(x => x.GpsStamp).ToArray();
             foreach (var pointId in deletedPointIds)
             {
                 GpsHistory point = gpsHistoryDS.Get(pointId);
@@ -227,9 +233,17 @@ namespace HA_DailyRoutes.Services
                 gpsHistoryDS.Save(point);
             }
 
-            var newRoute = new GpsRoute();
-            if (splitPointId != default)
+            splitPoints = splitPoints
+                .Select(x => (id: x, GpsStamp: routePoints.FirstOrDefault(y => y.Id == x)?.GpsStamp ?? throw new NullReferenceException($"Точки с Id:{x} в исходном маршруте нет")))
+                .OrderBy(x => x.GpsStamp)
+                .Select(x => x.id)
+                .ToArray();
+            var sugesstedSplits = suggestRouteSplitDS.GetAll().ToArray().Where(x => suggestedSplitPoints.Contains(x.Id)).ToList();
+            for (int i = 0; i < splitPoints.Count(); i++)
             {
+                var splitPointId = splitPoints[i];
+                var nextSplitPointId = i + 1 < splitPoints.Count() ? splitPoints[i + 1] : Guid.Empty;
+                var newRoute = new GpsRoute();
                 newRoute = gpsRouteDS.Save(newRoute);
                 bool startDelete = false;
                 foreach (var point in routePoints)
@@ -245,13 +259,36 @@ namespace HA_DailyRoutes.Services
                         point.GpsRoute = newRoute;
                         newRoute.GpsPoints.Add(point);
                     }
+                    if (point.Id == nextSplitPointId)
+                    {
+                        break;
+                    }
                 }
-                newRoute.Start = newRoute.GpsPoints.First().GpsStamp;
-                newRoute.End = newRoute.GpsPoints.Last().GpsStamp;
+                var suggestedSplitStart = sugesstedSplits.FirstOrDefault(x => x.SplitePoint.Id == splitPointId);
+                newRoute.Start = suggestedSplitStart is null
+                    ? newRoute.GpsPoints.First().GpsStamp
+                    : suggestedSplitStart.NextStart;
+
+                var suggestedSplitEnd = sugesstedSplits.FirstOrDefault(x => x.SplitePoint.Id == nextSplitPointId);
+                newRoute.End = suggestedSplitEnd is null
+                    ? newRoute.GpsPoints.Last().GpsStamp
+                    : suggestedSplitEnd.PrevEnd;
+
                 newRoute.Origin = destination;
                 gpsRouteDS.Save(newRoute);
-                route.End = newRoute.Start;
+                if (i == 0)
+                {
+                    route.End = suggestedSplitStart is null
+                        ? newRoute.Start
+                        : suggestedSplitStart.PrevEnd;
+                    nextRouteToAprove = newRoute.Id;
+                }
             }
+            sugesstedSplits.ForEach(x =>
+            {
+                x.IsAproved = true;
+                suggestRouteSplitDS.Save(x);
+            });
 
             route.Origin = origin;
             route.Destination = destination;
@@ -264,9 +301,9 @@ namespace HA_DailyRoutes.Services
                 route.CalendarEventId = calendarEventId;
                 gpsRouteDS.Save(route);
             });
-            return splitPointId != default
-                ? new { newRouteId = newRoute.Id }
-                : null!;
+            return nextRouteToAprove is null
+                ? null
+                : new { newRouteId = nextRouteToAprove };
         }
 
         /// <summary>
