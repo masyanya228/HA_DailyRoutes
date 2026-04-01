@@ -227,7 +227,7 @@ namespace HA_DailyRoutes.Services
                 gpsRouteDS.Save(route);
             });
             return nextRouteToAprove is null
-                ? null
+                ? null!
                 : new { newRouteId = nextRouteToAprove };
         }
 
