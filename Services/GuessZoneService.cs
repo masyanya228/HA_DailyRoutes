@@ -199,15 +199,15 @@ namespace HA_DailyRoutes.Services
                     ? newRoute.GpsPoints.Last().GpsStamp
                     : suggestedSplitEnd.PrevEnd;
 
-                newRoute.Origin = destination;
-                gpsRouteDS.Save(newRoute);
                 if (i == 0)
                 {
+                    nextRouteToAprove = newRoute.Id;
                     route.End = suggestedSplitStart is null
                         ? newRoute.Start
                         : suggestedSplitStart.PrevEnd;
-                    nextRouteToAprove = newRoute.Id;
+                    newRoute.Origin = destination;
                 }
+                gpsRouteDS.Save(newRoute);
             }
             sugesstedSplits.ForEach(x =>
             {
