@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc.Formatters;
-
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 
 namespace HA_DailyRoutes.Models.DTOs
 {

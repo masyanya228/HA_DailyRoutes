@@ -28,6 +28,8 @@ namespace HA_DailyRoutes.Entities
 
         public virtual string? SuggestedOrigin { get; set; } = null;
         public virtual string? SuggestedDestination { get; set; } = null;
+        public virtual IEnumerable<SuggestRouteSplit> SuggestSplits { get; set; }
+        public virtual SuggestRouteStartEnd SuggestStartEnd { get; set; }
 
 
         private IEnumerable<GpsHistory> _points;

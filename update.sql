@@ -207,3 +207,18 @@
         references GpsRoutes
     alter table SuggestRouteSplits 
         add column IsAproved boolean
+    create table SuggestRouteStartEnds (
+        Id uuid default gen_random_uuid()  not null,
+       TimeStamp timestamp,
+       OriginalStart timestamp,
+       OriginalEnd timestamp,
+       SuggestedStart timestamp,
+       SuggestedEnd timestamp,
+       IsAproved boolean,
+       Route_id uuid,
+       primary key (Id)
+    )
+    alter table SuggestRouteStartEnds 
+        add constraint FK_F454A988 
+        foreign key (Route_id) 
+        references GpsRoutes

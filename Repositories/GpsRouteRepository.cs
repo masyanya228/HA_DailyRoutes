@@ -7,6 +7,9 @@ using NHibernate;
 using ISession = NHibernate.ISession;
 namespace HA_DailyRoutes.Repositories
 {
+    /// <summary>
+    /// Системный сервис для отладки. Позволяет полностью удалить маршрут и всё что с ним связано, чтобы высвободить GpsHistory
+    /// </summary>
     public class GpsRouteRepository : PGDeletableRepository<GpsRoute>
     {
         public override bool Delete(GpsRoute route)

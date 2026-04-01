@@ -99,7 +99,7 @@ namespace HA_DailyRoutes.Services
                 : gpsRoutes.FirstOrDefault(x => x.Id == id);
             if (route is null)
                 return null;
-            var suggestSplits = SupplementWithEngineData(route);
+            engineService.SupplementRoute(route);
             GuessRoute(route);
             return new
             {
@@ -112,91 +112,16 @@ namespace HA_DailyRoutes.Services
                     Points = route.GpsPoints.Count,
                     Origin = route.SuggestedOrigin == null ? route.Origin : "",
                     Destination = route.SuggestedDestination == null ? route.Destination : "",
-                    SuggestedOrigin = route.SuggestedOrigin,
-                    SuggestedDestination = route.SuggestedDestination,
                     Coordinates = route.AllPoints
                         .Select(p => new object[] { p.Id, p.Latitude, p.Longitude })
                         .ToList(),
-                    SuggestSplits = suggestSplits.Select(s => new { SuggestRouteSplitId=s.Id, SplitPointId = s.SplitePoint.Id, s.PrevEnd, s.NextStart })
+                    SuggestedOrigin = route.SuggestedOrigin,
+                    SuggestedDestination = route.SuggestedDestination,
+                    SuggestSplits = route.SuggestSplits?.Select(s => new { SuggestRouteSplitId=s.Id, SplitPointId = s.SplitePoint.Id, s.PrevEnd, s.NextStart }),
+                    SuggestStartEnd = route.SuggestStartEnd,
                 },
                 AllIds = gpsRoutes.Select(x => x.Id).ToList(),
             };
-        }
-
-        public IEnumerable<SuggestRouteSplit> SupplementWithEngineData(GpsRoute route)
-        {
-            engineService.GetCleanEngineStates();
-            var engineStates = engineHistoryDS.GetAll().ToArray();
-            var engineRoute = new EngineRouteDTO();
-            var startState = engineStates
-                .Where(x => x.State == EngineStates.On || x.State == EngineStates.OnAuto)
-                .MinBy(x => Math.Abs((x.Updated - route.Start).TotalMinutes));
-
-            var endState = engineStates
-                .Where(x => x.State == EngineStates.Off)
-                .MinBy(x => Math.Abs((x.Updated - route.End).TotalMinutes));
-
-            if (startState == null || endState == null)
-                return null;
-
-            engineRoute.EngineHistories = engineStates.SkipWhile(x => x.Id != startState.Id).TakeWhile(x => x.Id != endState.Id).Prepend(endState).OrderBy(x => x.Updated).ToList();
-            var startEnd = SuggestStartEnd(route, engineRoute);
-            var splits = SuggestSplits(route, engineRoute);
-            Console.WriteLine($"{route.Start:g}-{route.End:g} {route.Origin}->{route.Destination}");
-            if (startEnd != default)
-            {
-                route.Start = startEnd.Start;
-                route.End = startEnd.End;
-                Console.WriteLine($"StartEnd:\r\n{route.Start:t}-{route.End:t}");
-            }
-            if (splits.Any())
-            {
-                foreach (var split in splits)
-                {
-                    Console.WriteLine($"Split:\r\n{split.PrevEnd:g}-{split.NextStart:g} {split.SplitePoint.State} {split.SplitePoint.GpsStamp:g} ({split.MidStamp:g})");
-                }
-            }
-            return splits;
-        }
-
-        private SuggestRouteStartEnd SuggestStartEnd(GpsRoute route, EngineRouteDTO engineRoute)
-        {
-            if (engineRoute is null)
-                return null;
-            var result = new SuggestRouteStartEnd();
-            if (engineRoute.EngineHistories.FirstOrDefault()?.State == EngineStates.On)
-                result.Start = engineRoute.Start!.Value;
-            
-            result.End = engineRoute.End!.Value;
-            return result;
-        }
-
-        private IEnumerable<SuggestRouteSplit> SuggestSplits(GpsRoute route, EngineRouteDTO engineRoute)
-        {
-            var oldSuggests = suggestRouteSplitDS.GetAll().Where(x => x.Route.Id == route.Id).ToArray();
-            var routeSplits = new List<SuggestRouteSplit>();
-            var curRouteSplit = new SuggestRouteSplit();
-            var midPoints = engineRoute.EngineHistories.ToArray()[1..^1];
-            foreach (var midPoint in midPoints)
-            {
-                if (midPoint.State == EngineStates.Off)
-                    curRouteSplit.PrevEnd = midPoint.Updated;
-                if (curRouteSplit.PrevEnd != default && midPoint.State == EngineStates.On)
-                {
-                    curRouteSplit.NextStart = midPoint.Updated;
-                    curRouteSplit.SplitePoint = route.AllPoints
-                        .Where(x => x.GpsStamp.Between(curRouteSplit.PrevEnd, curRouteSplit.NextStart))
-                        .OrderBy(x => Math.Abs((x.GpsStamp - curRouteSplit.MidStamp).TotalMinutes))
-                        .FirstOrDefault()!;
-                    curRouteSplit.Route = route;
-
-                    if (curRouteSplit.IsCompleted && !oldSuggests.Any(x => x.SplitePoint == curRouteSplit.SplitePoint))
-                        routeSplits.Add(curRouteSplit);
-                    else
-                        curRouteSplit = new SuggestRouteSplit();
-                }
-            }
-            return oldSuggests.Concat(routeSplits.Select(suggestRouteSplitDS.Save));
         }
 
         /// <summary>

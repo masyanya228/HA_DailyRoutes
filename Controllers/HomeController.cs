@@ -11,13 +11,13 @@ namespace HA_DailyRoutes.Controllers
 {
     public class HomeController : Controller
     {
-        public readonly HAService HAService;
         public readonly GuessZoneService GuessZoneService;
+        public readonly GpsRouteService GpsRouteService;
 
-        public HomeController(HAService hAService, GuessZoneService guessZoneService)
+        public HomeController(GuessZoneService guessZoneService, GpsRouteService gpsRouteService)
         {
-            HAService = hAService;
             GuessZoneService = guessZoneService;
+            GpsRouteService = gpsRouteService;
         }
 
         public IActionResult Index()
@@ -34,7 +34,7 @@ namespace HA_DailyRoutes.Controllers
         [ResponseCache(Duration = 60)]
         public IActionResult Routes(int days = 30)
         {
-            return Json(HAService.GetHistory(days));
+            return Json(GpsRouteService.GetRoutes(days));
         }
 
         /// <summary>
