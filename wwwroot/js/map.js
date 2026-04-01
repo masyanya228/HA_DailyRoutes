@@ -453,11 +453,11 @@ var RouteManager = (function () {
         routes.forEach(function (route) {
             var row = document.createElement('label');
             _css(row, {
-                display: 'flex',
-                alignItems: 'center',
-                padding: '6px 0',
-                cursor: 'pointer',
-                borderBottom: '1px solid #f0f0f0',
+                display:       'flex',
+                alignItems:    'center',
+                padding:       '6px 0',
+                cursor:        'pointer',
+                borderBottom:  '1px solid #f0f0f0',
                 gap: '8px',
                 userSelect: "none"
             });
@@ -778,8 +778,8 @@ var RouteApproval = (function () {
         }
 
         // Инициализируем состояние редактора
-        _editorCoords  = route.coordinates.slice(); // [[id, lat, lng], ...]
-        _origCoords    = route.coordinates.slice();
+        _editorCoords  = route.coordinates.slice();
+        _origCoords    = route.coordinates.map(function (c) { return c.slice(); });
         _deletedIds    = [];
         _movedPoints   = [];
         _splitPointId  = null;
@@ -910,17 +910,12 @@ var RouteApproval = (function () {
     // Сбросить редактор к исходному состоянию
     // ──────────────────────────────────────────────────────
     function resetEditor() {
-        _editorCoords  = _origCoords.slice();
-        _deletedIds    = [];
-        _movedPoints   = [];
-        _splitPointId  = null;
-        _removePins();
-
-        var latLngs = _editorCoords.map(function (c) { return [c[1], c[2]]; });
-        _addPin(latLngs[0],                  'А', '#2ecc71', _fmtTime(_current.start));
-        _addPin(latLngs[latLngs.length - 1], 'Б', '#e74c3c', _fmtTime(_current.end));
-
-        _redrawEditor();
+        // Глубокое копирование — чтобы вернуть и крайние точки
+        _editorCoords = _origCoords.map(function (c) { return c.slice(); });
+        _deletedIds   = [];
+        _movedPoints  = [];
+        _splitPointId = null;
+        _redrawEditor(); // _redrawEditor сам поставит пины
     }
 
     // ──────────────────────────────────────────────────────
@@ -1158,7 +1153,18 @@ var RouteApproval = (function () {
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(payload)
         })
-        .then(function () { _goNext(); })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data && data.newRouteId) {
+                // Сервер вернул id второй части после разделения — грузим его
+                _allIds.splice(_currentIdx, 1);
+                _allIds.splice(_currentIdx, 0, data.newRouteId);
+                _current = null;
+                _fetchRoute(data.newRouteId, function () { openModal(_current.id); });
+            } else {
+                _goNext();
+            }
+        })
         .catch(function (e) { console.error('AproveRoute:', e); });
     }
 
