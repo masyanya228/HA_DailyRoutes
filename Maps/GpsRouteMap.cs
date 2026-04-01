@@ -13,6 +13,7 @@ namespace HA_DailyRoutes.Maps
             Map(x => x.IsAproved);
             Map(x => x.IsDeleted);
             Map(x => x.DeletedStamp);
+            Map(x => x.CalendarEventId);
             HasMany(x => x.GpsPoints)
                 .Cascade.None()
                 .Not.LazyLoad();

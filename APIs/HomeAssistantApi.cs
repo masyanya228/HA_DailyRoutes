@@ -19,7 +19,7 @@ namespace HA_DailyRoutes.APIs
             Factory = factory;
         }
 
-        public List<DTOEntityHistoryItem> GetLocationHistory(DateTime? startFrom)
+        public List<TrackerStateDTO> GetLocationHistory(DateTime? startFrom)
         {
             var weekAgo = DateTime.Now.AddDays(-7);
             var startTime = startFrom > weekAgo ? startFrom.Value : weekAgo;
@@ -35,7 +35,26 @@ namespace HA_DailyRoutes.APIs
                 .AddHeader("Content-Type", $"application/json");
 
             var resp = client.Get(request);
-            return JsonConvert.DeserializeObject<List<List<DTOEntityHistoryItem>>>(resp.Content)?.FirstOrDefault() ?? throw new NullReferenceException("HA вернул недостоверные данные");
+            return JsonConvert.DeserializeObject<List<List<TrackerStateDTO>>>(resp.Content)?.FirstOrDefault() ?? throw new NullReferenceException("HA вернул недостоверные данные");
+        }
+
+        public List<EngineStateDTO> GetStarlineEngineHistory(DateTime? startFrom)
+        {
+            var weekAgo = DateTime.Now.AddDays(-7);
+            var startTime = startFrom > weekAgo ? startFrom.Value : weekAgo;
+            var endTime = Uri.EscapeDataString($"{DateTime.Now:yyyy-MM-ddTHH:mm:sszzz}");
+            string query = $"{_HAURL}/api/history/period/" +
+                $"{startTime:yyyy-MM-ddTHH:mm:sszzz}" +
+                $"?filter_entity_id=switch.ceed_engine" +
+                $"&end_time={endTime}";
+
+            RestClient client = new RestClient(query);
+            var request = new RestRequest()
+                .AddHeader("Authorization", $"Bearer {_token}")
+                .AddHeader("Content-Type", $"application/json");
+
+            var resp = client.Get(request);
+            return JsonConvert.DeserializeObject<List<List<EngineStateDTO>>>(resp.Content)?.FirstOrDefault() ?? throw new NullReferenceException("HA вернул недостоверные данные");
         }
 
         public List<ZoneDTO> GetZones()

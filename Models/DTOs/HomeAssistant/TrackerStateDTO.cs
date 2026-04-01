@@ -2,7 +2,14 @@
 
 namespace HA_DailyRoutes.Models.DTOs.HomeAssistant
 {
-    public class Attributes
+    public class TrackerStateDTO : EntityStateDTO
+    {
+
+        [JsonProperty("attributes")]
+        public TrackerAttributesDTO Attributes { get; set; }
+    }
+
+    public class TrackerAttributesDTO
     {
         [JsonProperty("source_type")]
         public string SourceType { get; set; }
@@ -19,24 +26,4 @@ namespace HA_DailyRoutes.Models.DTOs.HomeAssistant
         [JsonProperty("friendly_name")]
         public string FriendlyName { get; set; }
     }
-
-    public class DTOEntityHistoryItem
-    {
-        [JsonProperty("entity_id")]
-        public string EntityId { get; set; }
-
-        [JsonProperty("state")]
-        public string State { get; set; }
-
-        [JsonProperty("attributes")]
-        public Attributes Attributes { get; set; }
-
-        [JsonProperty("last_changed")]
-        public DateTime LastChanged { get; set; }
-
-        [JsonProperty("last_updated")]
-        public DateTime LastUpdated { get; set; }
-    }
-
-
 }

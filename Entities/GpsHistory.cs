@@ -1,6 +1,4 @@
-﻿using DDDHibernate.Models.Entities;
-
-namespace HA_DailyRoutes.Entities
+﻿namespace HA_DailyRoutes.Entities
 {
     public class GpsHistory : LocationPoint
     {
@@ -21,6 +19,11 @@ namespace HA_DailyRoutes.Entities
         public override double GetRadius()
         {
             return GpsAccuracy;
+        }
+
+        public override string ToString()
+        {
+            return $"{State} {GpsStamp:g}";
         }
     }
 }

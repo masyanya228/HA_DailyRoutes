@@ -4,7 +4,8 @@ namespace HA_DailyRoutes.APIs
 {
     public interface IHomeAssistantApi
     {
-        List<DTOEntityHistoryItem> GetLocationHistory(DateTime? startFrom);
+        List<TrackerStateDTO> GetLocationHistory(DateTime? startFrom);
+        List<EngineStateDTO> GetStarlineEngineHistory(DateTime? startFrom);
         List<ZoneDTO> GetZones();
     }
 }

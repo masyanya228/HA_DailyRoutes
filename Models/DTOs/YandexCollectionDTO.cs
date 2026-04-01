@@ -2,6 +2,30 @@
 
 namespace HAOS_sensor_test
 {
+    public class YandexCollectionDTO
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; } = "FeatureCollection";
+
+        [JsonProperty("features")]
+        public List<YandexDTO> Features { get; set; } = new List<YandexDTO>();
+    }
+
+    public class YandexDTO
+    {
+        [JsonProperty("type")]
+        public string Type { get; set; }
+
+        [JsonProperty("id")]
+        public int Id { get; set; }
+
+        [JsonProperty("geometry")]
+        public Geometry Geometry { get; set; } = new Geometry();
+
+        [JsonProperty("properties")]
+        public Props Properties { get; set; } = new Props();
+    }
+
     public class Geometry
     {
         [JsonProperty("type")]
@@ -24,29 +48,5 @@ namespace HAOS_sensor_test
 
         [JsonProperty("stroke-opacity")]
         public double StrokeOpacity { get; set; }
-    }
-
-    public class Root
-    {
-        [JsonProperty("type")]
-        public string Type { get; set; } = "FeatureCollection";
-
-        [JsonProperty("features")]
-        public List<DTOYandex> Features { get; set; } = new List<DTOYandex>();
-    }
-
-    public class DTOYandex
-    {
-        [JsonProperty("type")]
-        public string Type { get; set; }
-
-        [JsonProperty("id")]
-        public int Id { get; set; }
-
-        [JsonProperty("geometry")]
-        public Geometry Geometry { get; set; } = new Geometry();
-
-        [JsonProperty("properties")]
-        public Props Properties { get; set; } = new Props();
     }
 }

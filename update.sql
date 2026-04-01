@@ -179,3 +179,29 @@
         add column IsDeleted boolean
     alter table GpsRoutes 
         add column DeletedStamp timestamp
+    alter table GpsRoutes 
+        add column CalendarEventId varchar(255)
+    create table EngineHistorys (
+        Id uuid default gen_random_uuid()  not null,
+       TimeStamp timestamp,
+       Updated timestamp,
+       State varchar(255),
+       primary key (Id)
+    )
+    create table SuggestRouteSplits (
+        Id uuid default gen_random_uuid()  not null,
+       TimeStamp timestamp,
+       PrevEnd timestamp,
+       NextStart timestamp,
+       SplitePoint_id uuid,
+       Route_id uuid,
+       primary key (Id)
+    )
+    alter table SuggestRouteSplits 
+        add constraint FK_A3E85447 
+        foreign key (SplitePoint_id) 
+        references GpsHistorys
+    alter table SuggestRouteSplits 
+        add constraint FK_3BE0C537 
+        foreign key (Route_id) 
+        references GpsRoutes

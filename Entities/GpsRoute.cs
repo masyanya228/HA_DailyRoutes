@@ -14,7 +14,7 @@ namespace HA_DailyRoutes.Entities
 
         public virtual TimeSpan Duration { get => End - Start; }
 
-        public virtual bool IsAproved { get; set; } = false;
+        public virtual bool IsAproved { get; set; }
 
         /// <summary>
         /// Точки маршрута
@@ -50,6 +50,7 @@ namespace HA_DailyRoutes.Entities
 
         public virtual DateTime DeletedStamp { get; set; }
         public virtual bool IsDeleted { get; set; }
+        public virtual string? CalendarEventId { get; set; }
 
         private IEnumerable<GpsHistory> GetRoutePoints()
         {

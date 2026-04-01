@@ -55,7 +55,7 @@ public class HAService
     /// </summary>
     /// <param name="gpsHistoryItems"></param>
     /// <param name="entityHistoryItems"></param>
-    private void ArchiveNewGpsHistory(List<GpsHistory> gpsHistoryItems, List<DTOEntityHistoryItem> entityHistoryItems)
+    private void ArchiveNewGpsHistory(List<GpsHistory> gpsHistoryItems, List<TrackerStateDTO> entityHistoryItems)
     {
         entityHistoryItems.ForEach(x =>
         {
@@ -113,14 +113,14 @@ public class HAService
     /// </summary>
     /// <param name="startFrom"></param>
     /// <returns></returns>
-    private List<DTOEntityHistoryItem> PullNewGpsPoints(DateTime? startFrom) => haApi.GetLocationHistory(startFrom);
+    private List<TrackerStateDTO> PullNewGpsPoints(DateTime? startFrom) => haApi.GetLocationHistory(startFrom);
 
     /// <summary>
     /// Удаляет повторяющиеся точки присутствия в известных местах
     /// </summary>
     /// <param name="lastPoint"></param>
     /// <param name="historyItems"></param>
-    private void FilterStaingPoints(GpsHistory? lastPoint, List<DTOEntityHistoryItem> historyItems)
+    private void FilterStaingPoints(GpsHistory? lastPoint, List<TrackerStateDTO> historyItems)
     {
         bool staing = lastPoint?.State != "not_home";
         for (int i = 0; i < historyItems.Count; i++)
@@ -144,7 +144,7 @@ public class HAService
     /// </summary>
     /// <param name="startStamp"></param>
     /// <param name="historyItems"></param>
-    private List<DTOEntityHistoryItem> FilterActualPoints(DateTime? startStamp, List<DTOEntityHistoryItem> historyItems)
+    private List<TrackerStateDTO> FilterActualPoints(DateTime? startStamp, List<TrackerStateDTO> historyItems)
     => historyItems.Where(x => x.Attributes.SourceType == "gps")
         .Where(x => x.LastChanged > startStamp)
         .ToList();
